@@ -1,0 +1,25 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../dist"
+		},
+		{
+			"path": "../models"
+		},
+		{
+			"path": "../node_modules"
+		},
+		{
+			"path": "../routers"
+		},
+		{
+			"path": "../services"
+		},
+		{
+			"path": "../src"
+		}
+	]
+}

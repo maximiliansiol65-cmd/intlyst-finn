@@ -1,0 +1,1 @@
+from api.benchmark_routes import router

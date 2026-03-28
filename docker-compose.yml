@@ -1,0 +1,181 @@
+version: '3.9'
+
+services:
+  # ════════════════════════════════════════════════════════════
+  # API Backend Service
+  # ════════════════════════════════════════════════════════════
+  api:
+    build:
+      context: .
+      target: development  # Use 'production' for prod
+    container_name: intlyst-api
+    ports:
+      - "8000:8000"
+    environment:
+      # 🔐 SECURITY: Set these via environment, NOT in compose
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      
+      # 🔧 Configuration
+      - CLAUDE_MODEL=claude-sonnet-4-20250514
+      - DATABASE_URL=sqlite:///./local.db
+      - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+      - LOG_LEVEL=INFO
+      - APP_ENV=development
+    volumes:
+      # For development: mount source code for hot reload
+      - .:/app
+      - /app/__pycache__  # Exclude pycache from mount
+    depends_on:
+      - db  # Optional: if using PostgreSQL instead of SQLite
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # ════════════════════════════════════════════════════════════
+  # Optional: PostgreSQL Database (for production)
+  # ════════════════════════════════════════════════════════════
+  db:
+    image: postgres:15-alpine
+    container_name: intlyst-db
+    environment:
+      POSTGRES_USER: intlyst
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev-password-change-in-prod}
+      POSTGRES_DB: intlyst
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U intlyst"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ════════════════════════════════════════════════════════════
+  # Redis Cache (optional, for session/rate limiting)
+  # ════════════════════════════════════════════════════════════
+  redis:
+    image: redis:7-alpine
+    container_name: intlyst-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ════════════════════════════════════════════════════════════
+  # Frontend (React + Vite)
+  # ════════════════════════════════════════════════════════════
+  frontend:
+    image: node:20-alpine
+    container_name: intlyst-frontend
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./index.html:/app/index.html
+      - ./vite.config.js:/app/vite.config.js
+      - ./package.json:/app/package.json
+      - ./package-lock.json:/app/package-lock.json
+      - node_modules:/app/node_modules
+    command: sh -c "npm install && npm run dev"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  node_modules:
+    driver: local
+
+networks:
+  default:
+    name: intlyst-network
+    driver: bridge
+
+# ════════════════════════════════════════════════════════════
+# Usage Instructions
+# ════════════════════════════════════════════════════════════
+#
+# 1. DEVELOPMENT SETUP:
+#    cp .env.example .env.local
+#    # Edit .env.local with your API keys
+#    docker-compose up --build
+#
+#    Access:
+#    - API: http://localhost:8000
+#    - Frontend: http://localhost:5173
+#    - Database: localhost:5432 (postgres:dev-password-change-in-prod)
+#    - Redis: localhost:6379
+#
+# 2. PRODUCTION SETUP:
+#    Modify this compose for production:
+#    - Change 'target: development' to 'target: production'
+#    - Set ALLOWED_ORIGINS to your domain
+#    - Use strong DB_PASSWORD
+#    - Use named volumes with backups
+#    - Remove frontend service (use CDN + S3 instead)
+#
+# 3. ENVIRONMENT VARIABLES:
+#    Create .env file with:
+#    ANTHROPIC_API_KEY=sk-ant-...
+#    STRIPE_SECRET_KEY=sk_live_...
+#    JWT_SECRET=<strong-secret>
+#    GOOGLE_MAPS_API_KEY=AIzaSy...
+#    DB_PASSWORD=<strong-password>
+#
+# 4. MONITORING:
+#    Check container logs:
+#    docker-compose logs -f api        # API logs
+#    docker-compose logs -f frontend   # Frontend logs
+#
+# 5. DATABASE MANAGEMENT:
+#    # Connect to PostgreSQL:
+#    docker exec -it intlyst-db psql -U intlyst -d intlyst
+#
+#    # Backup:
+#    docker exec intlyst-db pg_dump -U intlyst intlyst > backup.sql
+#
+# 6. CLEANUP:
+#    docker-compose down              # Stop containers
+#    docker-compose down -v            # Stop + remove volumes (DATA LOSS!)
+#    docker system prune -a            # Clean up all unused resources
+#
+# ════════════════════════════════════════════════════════════
+# Security Notes
+# ════════════════════════════════════════════════════════════
+#
+# ✓ Non-root user in containers
+# ✓ Secrets via environment variables (not hardcoded)
+# ✓ Health checks for all services
+# ✓ Restart policies
+# ✓ Network isolation (can add more granular rules)
+#
+# ⚠️ For production:
+# - Use Docker secrets instead of env vars for sensitive data
+# - Add reverse proxy (Nginx) with SSL/TLS
+# - Configure rate limiting
+# - Set up automated backups
+# - Use managed database service (AWS RDS, Google Cloud SQL)
+#
+# ════════════════════════════════════════════════════════════

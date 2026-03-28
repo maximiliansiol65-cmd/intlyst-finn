@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(start \"\" \"c:\\\\Users\\\\T590\\\\Desktop\\\\intlyst-backend-main\\\\login-preview.html\")",
+      "Bash(python -c \"from models.user_integration import UserIntegration; print\\(''OK''\\)\")",
+      "Bash(python -c \"from api.user_integrations_routes import router; print\\(''OK''\\)\")",
+      "Bash(python -c \"from dotenv import load_dotenv; load_dotenv\\(\\); from api.user_integrations_routes import router; print\\(''OK''\\)\")",
+      "Bash(python -c \"from dotenv import load_dotenv; load_dotenv\\(\\); import main; print\\(''OK''\\)\")",
+      "Bash(npx vite:*)",
+      "Bash(python -c \":*)",
+      "Bash(npx acorn:*)",
+      "Bash(node -e \":*)"
+    ]
+  }
+}

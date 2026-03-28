@@ -1,0 +1,1 @@
+from api.anomalies_routes import router

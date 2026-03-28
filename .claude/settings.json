@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(start \"\" \"http://127.0.0.1:5175\")",
+      "Bash(start \"\" \"c:\\\\Users\\\\T590\\\\Desktop\\\\intlyst-backend-main\\\\loader-preview.html\")",
+      "Bash(grep -r \"SMTP\\\\|mail\\\\|email\" /c/Users/T590/Desktop/intlyst-backend-main --include=*.py)"
+    ]
+  }
+}

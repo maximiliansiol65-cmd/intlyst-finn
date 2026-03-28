@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>INTLYST - Intelligente Business-Analyse</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f5f5f7;
+      color: #1d1d1f;
+    }
+
+    .app-layout {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* SIDEBAR */
+    .sidebar {
+      width: 200px;
+      background: #ffffff;
+      border-right: 1px solid #d5d5d7;
+      padding: 20px;
+      position: fixed;
+      left: 0;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    .logo {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 30px;
+      color: #1d1d1f;
+      letter-spacing: -0.5px;
+    }
+
+    .nav-section {
+      margin-bottom: 20px;
+    }
+
+    .nav-section-title {
+      font-size: 11px;
+      color: #6e6e73;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 10px;
+      padding: 0 10px;
+    }
+
+    .nav-link {
+      display: block;
+      padding: 10px 12px;
+      margin-bottom: 5px;
+      border-radius: 8px;
+      color: #6e6e73;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-size: 14px;
+    }
+
+    .nav-link:hover {
+      background: #f5f5f7;
+      color: #1d1d1f;
+    }
+
+    .nav-link.active {
+      background: #e5e5e7;
+      color: #1d1d1f;
+      font-weight: 600;
+    }
+
+    /* MAIN CONTENT */
+    .main-content {
+      flex: 1;
+      margin-left: 200px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topnav {
+      background: #ffffff;
+      border-bottom: 1px solid #d5d5d7;
+      padding: 16px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .topnav-title {
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .topnav-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn {
+      padding: 10px 16px;
+      background: #000000;
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: opacity 0.15s;
+    }
+
+    .btn:hover {
+      opacity: 0.8;
+    }
+
+    .content {
+      flex: 1;
+      padding: 32px;
+      overflow-y: auto;
+      background: #f5f5f7;
+    }
+
+    .greeting {
+      margin-bottom: 32px;
+      font-size: 28px;
+      font-weight: 700;
+      color: #1d1d1f;
+    }
+
+    .greeting-time {
+      color: #6e6e73;
+      font-size: 16px;
+      margin-bottom: 20px;
+    }
+
+    /* GRID */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    .kpi-card {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 20px;
+      border: 1px solid #e5e5e7;
+      transition: all 0.2s;
+    }
+
+    .kpi-card:hover {
+      border-color: #d5d5d7;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    .kpi-title {
+      font-size: 12px;
+      color: #6e6e73;
+      font-weight: 600;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .kpi-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: #1d1d1f;
+      margin-bottom: 8px;
+    }
+
+    .kpi-change {
+      font-size: 13px;
+      color: #10b981;
+    }
+
+    .kpi-change.negative {
+      color: #ef4444;
+    }
+
+    /* CHART CARD */
+    .chart-card {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 24px;
+      border: 1px solid #e5e5e7;
+      margin-bottom: 32px;
+    }
+
+    .chart-card-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      color: #1d1d1f;
+    }
+
+    .chart {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-around;
+      gap: 8px;
+      height: 200px;
+      padding: 20px 0;
+    }
+
+    .bar {
+      flex: 1;
+      background: linear-gradient(180deg, #6c84ff, #4f46e5);
+      border-radius: 4px 4px 0 0;
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+
+    .bar:hover {
+      opacity: 0.8;
+    }
+
+    /* INSIGHTS SECTION */
+    .insights-card {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 24px;
+      border: 1px solid #e5e5e7;
+    }
+
+    .insight-item {
+      padding: 16px;
+      border-bottom: 1px solid #f5f5f7;
+      display: flex;
+      gap: 16px;
+    }
+
+    .insight-item:last-child {
+      border-bottom: none;
+    }
+
+    .insight-icon {
+      font-size: 28px;
+      flex-shrink: 0;
+    }
+
+    .insight-text {
+      flex: 1;
+    }
+
+    .insight-title {
+      font-weight: 600;
+      color: #1d1d1f;
+      margin-bottom: 4px;
+    }
+
+    .insight-desc {
+      font-size: 13px;
+      color: #6e6e73;
+    }
+
+    /* LOGIN OVERLAY */
+    .login-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .login-overlay.show {
+      display: flex;
+    }
+
+    .login-card {
+      background: #ffffff;
+      border-radius: 18px;
+      padding: 40px;
+      max-width: 420px;
+      width: 90%;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    }
+
+    .login-title {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #1d1d1f;
+    }
+
+    .login-subtitle {
+      font-size: 13px;
+      color: #6e6e73;
+      margin-bottom: 28px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group:last-of-type {
+      margin-bottom: 24px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #6e6e73;
+      margin-bottom: 6px;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .form-group input:focus {
+      border-color: #000000;
+    }
+
+    .form-group input::placeholder {
+      color: #aeaeb2;
+    }
+
+    .btn-login {
+      width: 100%;
+      padding: 13px 0;
+      background: linear-gradient(135deg, #000000, #555555);
+      color: #ffffff;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: opacity 0.15s;
+    }
+
+    .btn-login:hover {
+      opacity: 0.88;
+    }
+
+    @media (max-width: 768px) {
+      .sidebar {
+        width: 60px;
+        padding: 12px;
+      }
+
+      .logo {
+        font-size: 14px;
+        margin-bottom: 20px;
+      }
+
+      .nav-section-title {
+        display: none;
+      }
+
+      .nav-link {
+        padding: 8px;
+        font-size: 0;
+        text-align: center;
+      }
+
+      .nav-link::before {
+        content: attr(data-emoji);
+        font-size: 20px;
+      }
+
+      .main-content {
+        margin-left: 60px;
+      }
+
+      .topnav {
+        padding: 12px 16px;
+      }
+
+      .content {
+        padding: 16px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="logo">INTLYST</div>
+      
+      <div class="nav-section">
+        <div class="nav-section-title">NAVIGATION</div>
+        <a class="nav-link active" href="#" data-emoji="🏠">Dashboard</a>
+        <a class="nav-link" href="#" data-emoji="📈">Analyse</a>
+        <a class="nav-link" href="#" data-emoji="📊">Insights</a>
+        <a class="nav-link" href="#" data-emoji="📈">Wachstum</a>
+        <a class="nav-link" href="#" data-emoji="👥">Kunden</a>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-section-title">TOOLS</div>
+        <a class="nav-link" href="#" data-emoji="🔔">Alerts</a>
+        <a class="nav-link" href="#" data-emoji="✅">Tasks</a>
+        <a class="nav-link" href="#" data-emoji="🎯">Goals</a>
+        <a class="nav-link" href="#" data-emoji="🧪">A/B Tests</a>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-section-title">ACCOUNT</div>
+        <a class="nav-link" href="#" data-emoji="⚙️">Settings</a>
+        <a class="nav-link" href="#logout" data-emoji="🚪">Logout</a>
+      </div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div class="main-content">
+      <!-- TOPNAV -->
+      <div class="topnav">
+        <div class="topnav-title">Dashboard</div>
+        <div class="topnav-actions">
+          <button class="btn" onclick="showLogin()">Login</button>
+          <span>👤</span>
+        </div>
+      </div>
+
+      <!-- CONTENT -->
+      <div class="content">
+        <div class="greeting-time" id="greeting"></div>
+        <div class="greeting" id="greeting-name">Willkommen zurück!</div>
+
+        <!-- ABO AUSWAHL -->
+        <div style="margin-bottom: 24px;">
+          <label for="aboSelect" style="font-weight:600; margin-right:10px;">Abo-Stufe wählen:</label>
+          <select id="aboSelect" style="padding:6px 12px; border-radius:6px; border:1px solid #d5d5d7;">
+            <option value="basic">Basic</option>
+            <option value="pro">Pro</option>
+            <option value="strategic" selected>Strategic (Höchste Stufe)</option>
+          </select>
+        </div>
+
+        <!-- KPI CARDS -->
+        <div class="grid">
+          <div class="kpi-card">
+            <div class="kpi-title">💰 Revenue</div>
+            <div class="kpi-value">$45.2K</div>
+            <div class="kpi-change">↗ +8% vs letzter Monat</div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-title">👥 Neue Kunden</div>
+            <div class="kpi-value">285</div>
+            <div class="kpi-change">↗ +4% vs letzter Monat</div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-title">📊 Conversion Rate</div>
+            <div class="kpi-value">3.45%</div>
+            <div class="kpi-change">↗ +0.2pp vs letzter Monat</div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-title">🎯 Goals Erreicht</div>
+            <div class="kpi-value">7/10</div>
+            <div class="kpi-change">✅ On Track</div>
+          </div>
+        </div>
+
+        <!-- CHART -->
+        <div class="chart-card">
+          <div class="chart-card-title">📈 Revenue Trend (30 Tage)</div>
+          <div class="chart">
+            <div class="bar" style="height: 30%;"></div>
+            <div class="bar" style="height: 45%;"></div>
+            <div class="bar" style="height: 60%;"></div>
+            <div class="bar" style="height: 75%;"></div>
+            <div class="bar" style="height: 85%;"></div>
+            <div class="bar" style="height: 70%;"></div>
+            <div class="bar" style="height: 80%;"></div>
+            <div class="bar" style="height: 90%;"></div>
+            <div class="bar" style="height: 95%;"></div>
+            <div class="bar" style="height: 88%;"></div>
+          </div>
+        </div>
+
+        <!-- INSIGHTS -->
+        <div class="insights-card" id="insightsCard">
+          <div class="chart-card-title">🤖 KI-Empfehlungen (Abo-abhängig)</div>
+          <div id="insightsContent"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOGIN OVERLAY -->
+  <div class="login-overlay" id="loginOverlay">
+    <div class="login-card">
+      <div class="login-title">INTLYST</div>
+      <div class="login-subtitle">Intelligente Business-Analyse</div>
+      
+      <form onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label>E-Mail</label>
+          <input type="email" placeholder="max@beispiel.de" value="demo@bizlytics.de" required />
+        </div>
+        <div class="form-group">
+          <label>Passwort</label>
+          <input type="password" placeholder="••••••••" value="demo1234" required />
+        </div>
+        <button type="submit" class="btn-login">Anmelden</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    function updateGreeting() {
+      const hour = new Date().getHours();
+      let greeting = 'Willkommen zurück!';
+      if (hour < 12) greeting = 'Guten Morgen!';
+      else if (hour < 18) greeting = 'Guten Nachmittag!';
+      else greeting = 'Guten Abend!';
+      document.getElementById('greeting-name').textContent = greeting;
+      document.getElementById('greeting').textContent = new Date().toLocaleString('de-DE', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+
+    function showLogin() {
+      document.getElementById('loginOverlay').classList.add('show');
+    }
+
+    function handleLogin(e) {
+      e.preventDefault();
+      document.getElementById('loginOverlay').classList.remove('show');
+      alert('✅ Demo Login erfolgreich!\n\nBackend: http://localhost:8000\nFrontend: http://localhost:5173');
+    }
+
+    // ABO-abhängige Empfehlungen
+    const insightsData = {
+      basic: [
+        {
+          icon: '🟢',
+          title: 'Quick Win - Checkout-Flow optimieren',
+          desc: 'Effort: ⭐ (Low) | Expected impact: +$8K/Monat | Rationale: High cart abandonment at payment'
+        },
+        {
+          icon: '📧',
+          title: 'Email-Liste Segmentierung',
+          desc: 'Effort: ⭐ (Low) | Expected impact: +5% Customer Lifetime Value | Rationale: Different segments have different needs'
+        }
+      ],
+      pro: [
+        {
+          icon: '🟢',
+          title: 'Quick Win - Checkout-Flow optimieren',
+          desc: 'Effort: ⭐ (Low) | Expected impact: +$8K/Monat | Rationale: High cart abandonment at payment'
+        },
+        {
+          icon: '📧',
+          title: 'Email-Liste Segmentierung',
+          desc: 'Effort: ⭐ (Low) | Expected impact: +5% Customer Lifetime Value | Rationale: Different segments have different needs'
+        },
+        {
+          icon: '📊',
+          title: 'Saisonalität erkannt',
+          desc: 'Hohe Saisonalität in den Monaten März-Juni. Empfehlung: Stock up für diese Periode'
+        }
+      ],
+      strategic: [
+        {
+          icon: '🟢',
+          title: 'Quick Win - Checkout-Flow optimieren',
+          desc: 'Effort: ⭐ (Low) | Expected impact: +$8K/Monat | Rationale: High cart abandonment at payment'
+        },
+        {
+          icon: '📧',
+          title: 'Email-Liste Segmentierung',
+          desc: 'Effort: ⭐ (Low) | Expected impact: +5% Customer Lifetime Value | Rationale: Different segments have different needs'
+        },
+        {
+          icon: '🔵',
+          title: 'Strategische Initiative - Kundencodebase',
+          desc: 'Effort: ⭐⭐⭐ (High) | Time: 2-3 weeks | Expected impact: +12% Retention'
+        },
+        {
+          icon: '📊',
+          title: 'Saisonalität erkannt',
+          desc: 'Hohe Saisonalität in den Monaten März-Juni. Empfehlung: Stock up für diese Periode'
+        }
+      ]
+    };
+
+    function renderInsights(level) {
+      const container = document.getElementById('insightsContent');
+      container.innerHTML = '';
+      insightsData[level].forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'insight-item';
+        div.innerHTML = `
+          <div class="insight-icon">${item.icon}</div>
+          <div class="insight-text">
+            <div class="insight-title">${item.title}</div>
+            <div class="insight-desc">${item.desc}</div>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    document.getElementById('aboSelect').addEventListener('change', function(e) {
+      renderInsights(e.target.value);
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.getElementById('loginOverlay').classList.remove('show');
+      }
+    });
+
+    updateGreeting();
+    setInterval(updateGreeting, 60000);
+    renderInsights('strategic');
+  </script>
+</body>
+</html>

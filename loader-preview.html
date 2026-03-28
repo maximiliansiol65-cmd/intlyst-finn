@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>INTLYST – Ladebildschirm Vorschau</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    @keyframes gear-spin-cw {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+    @keyframes gear-spin-ccw {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(-360deg); }
+    }
+
+    .gear-cw  { animation: gear-spin-cw  2.4s linear infinite; }
+    .gear-ccw { animation: gear-spin-ccw 1.6s linear infinite; }
+    .gear-cw2 { animation: gear-spin-cw  2.0s linear infinite; }
+
+    .gears {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .gear-1 { width: 64px; height: 64px; }
+    .gear-2 { width: 44px; height: 44px; margin-top: 20px; }
+    .gear-3 { width: 56px; height: 56px; margin-top: -8px; }
+
+    .label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #86868b;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="gears">
+    <!-- Gear 1 - large, clockwise -->
+    <svg class="gear-1 gear-cw" viewBox="0 0 100 100">
+      <path fill="#000000" d="M43.3 5.2l-2.6 9.7a36.2 36.2 0 0 0-8.5 3.5l-9-5.2-9.2 9.2 5.2 9a36.2 36.2 0 0 0-3.5 8.5l-9.7 2.6v13l9.7 2.6a36.2 36.2 0 0 0 3.5 8.5l-5.2 9 9.2 9.2 9-5.2a36.2 36.2 0 0 0 8.5 3.5l2.6 9.7h13l2.6-9.7a36.2 36.2 0 0 0 8.5-3.5l9 5.2 9.2-9.2-5.2-9a36.2 36.2 0 0 0 3.5-8.5l9.7-2.6v-13l-9.7-2.6a36.2 36.2 0 0 0-3.5-8.5l5.2-9-9.2-9.2-9 5.2a36.2 36.2 0 0 0-8.5-3.5l-2.6-9.7h-13zM50 33a17 17 0 1 1 0 34 17 17 0 0 1 0-34z"/>
+      <circle cx="50" cy="50" r="10" fill="#ffffff"/>
+    </svg>
+
+    <!-- Gear 2 - small, counter-clockwise -->
+    <svg class="gear-2 gear-ccw" viewBox="0 0 100 100">
+      <path fill="#000000" d="M43.3 5.2l-2.6 9.7a36.2 36.2 0 0 0-8.5 3.5l-9-5.2-9.2 9.2 5.2 9a36.2 36.2 0 0 0-3.5 8.5l-9.7 2.6v13l9.7 2.6a36.2 36.2 0 0 0 3.5 8.5l-5.2 9 9.2 9.2 9-5.2a36.2 36.2 0 0 0 8.5 3.5l2.6 9.7h13l2.6-9.7a36.2 36.2 0 0 0 8.5-3.5l9 5.2 9.2-9.2-5.2-9a36.2 36.2 0 0 0 3.5-8.5l9.7-2.6v-13l-9.7-2.6a36.2 36.2 0 0 0-3.5-8.5l5.2-9-9.2-9.2-9 5.2a36.2 36.2 0 0 0-8.5-3.5l-2.6-9.7h-13zM50 33a17 17 0 1 1 0 34 17 17 0 0 1 0-34z"/>
+      <circle cx="50" cy="50" r="10" fill="#ffffff"/>
+    </svg>
+
+    <!-- Gear 3 - medium, clockwise -->
+    <svg class="gear-3 gear-cw2" viewBox="0 0 100 100">
+      <path fill="#000000" d="M43.3 5.2l-2.6 9.7a36.2 36.2 0 0 0-8.5 3.5l-9-5.2-9.2 9.2 5.2 9a36.2 36.2 0 0 0-3.5 8.5l-9.7 2.6v13l9.7 2.6a36.2 36.2 0 0 0 3.5 8.5l-5.2 9 9.2 9.2 9-5.2a36.2 36.2 0 0 0 8.5 3.5l2.6 9.7h13l2.6-9.7a36.2 36.2 0 0 0 8.5-3.5l9 5.2 9.2-9.2-5.2-9a36.2 36.2 0 0 0 3.5-8.5l9.7-2.6v-13l-9.7-2.6a36.2 36.2 0 0 0-3.5-8.5l5.2-9-9.2-9.2-9 5.2a36.2 36.2 0 0 0-8.5-3.5l-2.6-9.7h-13zM50 33a17 17 0 1 1 0 34 17 17 0 0 1 0-34z"/>
+      <circle cx="50" cy="50" r="10" fill="#ffffff"/>
+    </svg>
+  </div>
+
+  <div class="label">INTLYST lädt...</div>
+
+</body>
+</html>

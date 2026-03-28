@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>INTLYST Dashboard</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0a0a14;
+      color: #f1f5f9;
+      line-height: 1.5;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      min-height: 100vh;
+      gap: 0;
+    }
+
+    /* SIDEBAR */
+    .sidebar {
+      background: #13131f;
+      border-right: 1px solid #1e1e2e;
+      padding: 24px 16px;
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 220px;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    .logo {
+      font-size: 20px;
+      font-weight: 800;
+      margin-bottom: 32px;
+      color: #6366f1;
+      letter-spacing: 0.05em;
+    }
+
+    .nav {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .nav-item {
+      padding: 12px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: #94a3b8;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .nav-item:hover {
+      background: #1e1e2e;
+      color: #f1f5f9;
+    }
+
+    .nav-item.active {
+      background: #6366f1;
+      color: #fff;
+    }
+
+    /* HEADER */
+    .header {
+      background: #13131f;
+      border-bottom: 1px solid #1e1e2e;
+      padding: 16px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      margin-left: 220px;
+    }
+
+    .header-title {
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .btn {
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: opacity 0.2s;
+    }
+
+    .btn:hover {
+      opacity: 0.8;
+    }
+
+    /* MAIN CONTENT */
+    .main {
+      margin-left: 220px;
+      padding: 32px;
+    }
+
+    /* GRID LAYOUT */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 24px;
+      margin-bottom: 32px;
+    }
+
+    /* CARD */
+    .card {
+      background: #13131f;
+      border: 1px solid #1e1e2e;
+      border-radius: 12px;
+      padding: 24px;
+      transition: all 0.2s;
+    }
+
+    .card:hover {
+      border-color: #6366f1;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.1);
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .card-value {
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .card-change {
+      font-size: 14px;
+      color: #10b981;
+    }
+
+    .card-change.negative {
+      color: #ef4444;
+    }
+
+    /* CHART CARD */
+    .chart-card {
+      grid-column: 1 / -1;
+    }
+
+    .chart-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .chart {
+      height: 300px;
+      background: linear-gradient(180deg, rgba(99,102,241,0.1) 0%, transparent 100%);
+      border-radius: 8px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-around;
+      padding: 20px;
+      gap: 8px;
+    }
+
+    .bar {
+      flex: 1;
+      background: linear-gradient(180deg, #6366f1, #4f46e5);
+      border-radius: 4px 4px 0 0;
+      transition: all 0.2s;
+      min-height: 20px;
+    }
+
+    .bar:hover {
+      opacity: 0.8;
+      transform: scaleY(1.05);
+    }
+
+    /* INSIGHTS WIDGET */
+    .insights {
+      background: #13131f;
+      border: 1px solid #1e1e2e;
+      border-radius: 12px;
+      padding: 24px;
+      grid-column: 1 / -1;
+    }
+
+    .insight-item {
+      padding: 12px 0;
+      border-bottom: 1px solid #1e1e2e;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .insight-item:last-child {
+      border-bottom: none;
+    }
+
+    .insight-icon {
+      font-size: 20px;
+    }
+
+    .insight-text {
+      flex: 1;
+    }
+
+    .insight-label {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-bottom: 4px;
+    }
+
+    .insight-value {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    /* TIME PERIOD BUTTONS */
+    .time-period {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .time-btn {
+      padding: 8px 16px;
+      background: transparent;
+      border: 1px solid #1e1e2e;
+      border-radius: 6px;
+      color: #94a3b8;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 13px;
+    }
+
+    .time-btn:hover,
+    .time-btn.active {
+      background: #6366f1;
+      border-color: #6366f1;
+      color: #fff;
+    }
+
+    /* RESPONSIVE */
+    @media (max-width: 1024px) {
+      .container {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: relative;
+        width: 100%;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid #1e1e2e;
+        display: flex;
+        gap: 20px;
+        align-items: center;
+        padding: 16px;
+      }
+
+      .nav {
+        flex-direction: row;
+        flex: 1;
+      }
+
+      .header {
+        margin-left: 0;
+      }
+
+      .main {
+        margin-left: 0;
+      }
+    }
+
+    /* STATUS BADGE */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      background: rgba(16, 185, 129, 0.1);
+      color: #10b981;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    .status-badge.error {
+      background: rgba(239, 68, 68, 0.1);
+      color: #ef4444;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    /* HEALTH SCORE */
+    .health-score {
+      text-align: center;
+    }
+
+    .score-circle {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: conic-gradient(#10b981 0deg, #10b981 280deg, #1e1e2e 280deg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 16px;
+      position: relative;
+      font-weight: 700;
+      font-size: 36px;
+    }
+
+    .score-circle::after {
+      content: '%';
+      font-size: 18px;
+      margin-left: 4px;
+    }
+
+    .score-label {
+      color: #94a3b8;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="logo">📊 INTLYST</div>
+      <div class="nav">
+        <a class="nav-item active" href="#dashboard">🏠 Dashboard</a>
+        <a class="nav-item" href="#insights">📈 Insights</a>
+        <a class="nav-item" href="#analytics">📊 Analytics</a>
+        <a class="nav-item" href="#alerts">🔔 Alerts</a>
+        <a class="nav-item" href="#goals">🎯 Goals</a>
+        <a class="nav-item" href="#reports">📋 Reports</a>
+        <a class="nav-item" href="#settings">⚙️ Settings</a>
+      </div>
+    </div>
+
+    <div style="flex: 1;">
+      <!-- HEADER -->
+      <div class="header">
+        <h1 class="header-title">Dashboard</h1>
+        <div class="header-actions">
+          <span class="status-badge">
+            <span class="status-dot"></span> Live
+          </span>
+          <button class="btn">Export</button>
+          <div style="color: #94a3b8;">👤</div>
+        </div>
+      </div>
+
+      <!-- MAIN CONTENT -->
+      <div class="main">
+        <!-- TIME PERIOD SELECTOR -->
+        <div class="time-period">
+          <button class="time-btn">7 Tage</button>
+          <button class="time-btn">14 Tage</button>
+          <button class="time-btn active">30 Tage</button>
+          <button class="time-btn">60 Tage</button>
+          <button class="time-btn">90 Tage</button>
+        </div>
+
+        <!-- KPI CARDS -->
+        <div class="grid">
+          <div class="card health-score">
+            <div class="score-circle">78</div>
+            <div class="card-title">Health Score</div>
+            <div class="score-label">Ausgezeichnet</div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">💰 Revenue</div>
+            <div class="card-value">$45.2K</div>
+            <div class="card-change">↗ +8% vs letzter Monat</div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">👥 Customers</div>
+            <div class="card-value">1,285</div>
+            <div class="card-change">↗ +4% vs letzter Monat</div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">📊 Conversion</div>
+            <div class="card-value">3.45%</div>
+            <div class="card-change">↗ +0.2pp vs letzter Monat</div>
+          </div>
+        </div>
+
+        <!-- CHART -->
+        <div class="card chart-card">
+          <div class="chart-title">📈 Revenue Trend</div>
+          <div class="chart">
+            <div class="bar" style="height: 30%;"></div>
+            <div class="bar" style="height: 45%;"></div>
+            <div class="bar" style="height: 60%;"></div>
+            <div class="bar" style="height: 75%;"></div>
+            <div class="bar" style="height: 85%;"></div>
+            <div class="bar" style="height: 70%;"></div>
+            <div class="bar" style="height: 80%;"></div>
+            <div class="bar" style="height: 90%;"></div>
+            <div class="bar" style="height: 95%;"></div>
+            <div class="bar" style="height: 88%;"></div>
+          </div>
+        </div>
+
+        <!-- AI INSIGHTS -->
+        <div class="insights">
+          <div class="chart-title">🤖 KI-Empfehlungen (Live Claude API)</div>
+          <div class="insight-item">
+            <div class="insight-icon">🟢</div>
+            <div class="insight-text">
+              <div class="insight-label">Quick Win</div>
+              <div class="insight-value">Checkout-Flow optimieren → +$8K/Monat</div>
+            </div>
+          </div>
+          <div class="insight-item">
+            <div class="insight-icon">📧</div>
+            <div class="insight-text">
+              <div class="insight-label">Segmentierung</div>
+              <div class="insight-value">Email-Liste nach Verhalten aufteilen → +5% Wert</div>
+            </div>
+          </div>
+          <div class="insight-item">
+            <div class="insight-icon">🔵</div>
+            <div class="insight-text">
+              <div class="insight-label">Strategische Initiative</div>
+              <div class="insight-value">Kundencodebase implementieren → +12% Retention</div>
+            </div>
+          </div>
+          <div class="insight-item">
+            <div class="insight-icon">📊</div>
+            <div class="insight-text">
+              <div class="insight-label">Daten</div>
+              <div class="insight-value">Hohe Saisonalität erkannt März-Juni</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- API STATUS -->
+        <div style="margin-top: 32px; padding: 16px; background: #13131f; border-radius: 8px; border: 1px solid #1e1e2e; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 12px; color: #94a3b8;">API Status: <span class="status-badge"><span class="status-dot"></span> Healthy</span></span>
+          <span style="font-size: 12px; color: #94a3b8;">Response Time: 285ms | Last Updated: gerade eben</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Time period button interaction
+    document.querySelectorAll('.time-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+      });
+    });
+
+    // Nav item interaction
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', function(e) {
+        e.preventDefault();
+        document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+        this.classList.add('active');
+      });
+    });
+
+    // API Health check
+    async function checkHealth() {
+      try {
+        const response = await fetch('http://localhost:8000/');
+        const data = await response.json();
+        console.log('✅ Backend Status:', data);
+      } catch (error) {
+        console.log('⚠️ Backend nicht verfügbar');
+      }
+    }
+
+    checkHealth();
+    setInterval(checkHealth, 30000);
+  </script>
+</body>
+</html>
