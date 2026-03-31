@@ -1,359 +1,361 @@
+/* eslint-disable */
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import "../styles/premium-dashboard.css";
 import { useAuth } from "../contexts/AuthContext";
 
-const kpiCards = [
-  { label: "Umsatz", value: "€142.500", delta: "+8,4%" },
-  { label: "Neue Kunden", value: "326", delta: "+12,1%" },
-  { label: "Traffic", value: "184.200", delta: "+18,9%" },
-  { label: "Conversion Rate", value: "3,28%", delta: "-0,4%" },
-];
-
-const changeSignals = [
-  { title: "Umsatz fällt leicht", detail: "‑2,3% vs. letzte Woche" },
-  { title: "Traffic steigt", detail: "+18,9% durch Social Push" },
-  { title: "Conversion sinkt", detail: "Checkout Drop-offs ab Schritt 2" },
-  { title: "Social Media wächst", detail: "+31% Reichweite" },
-];
-
-const fallbackCauses = [
-  "Paid spend erhöht, aber Landingpage-Bounce bleibt hoch.",
-  "Mobile Checkout hat 14% Abbrüche wegen langsamer Ladezeit.",
-  "Social Posts mit Use-Cases konvertieren 2,1x besser.",
-];
-
-const actions = [
-  "3 neue Social Posts erstellen und terminieren",
-  "E-Mail an Bestandskunden mit Angebot senden",
-  "7-Tage Contentplan automatisch generieren",
-];
-
-const socialModule = {
-  stats: [
-    { label: "Reichweite", value: "1,2 Mio" },
-    { label: "Follower", value: "184k" },
-    { label: "Engagement", value: "7,8%" },
-    { label: "Beste Plattform", value: "Instagram · Reels" },
-  ],
-  ideas: [
-    "3 Reels zu Produkt-Use-Cases automatisch generieren",
-    "LinkedIn Thought Leadership Post für CEO",
-    "TikTok Trend-Remix mit eigenem Sound",
-  ],
+// ─── Role-based KPI configurations ───────────────────────────────────────────
+const ROLE_KPI_CONFIGS = {
+  ceo: {
+    label: "CEO",
+    icon: "👔",
+    description: "Strategie & Gesamtperformance",
+    kpis: [
+      { label: "Umsatz",           category: "revenue"    },
+      { label: "Wachstum (MoM)",   category: "growth"     },
+      { label: "Neue Kunden",      category: "customers"  },
+      { label: "Conversion Rate",  category: "conversion" },
+      { label: "Team-Effizienz",   category: "operations" },
+    ],
+  },
+  cmo: {
+    label: "CMO",
+    icon: "📣",
+    description: "Marketing & Kampagnen",
+    kpis: [
+      { label: "Marketing ROI",    category: "marketing"  },
+      { label: "Traffic",          category: "traffic"    },
+      { label: "Social Reach",     category: "social"     },
+      { label: "Lead-Generierung", category: "leads"      },
+      { label: "E-Mail Open Rate", category: "email"      },
+    ],
+  },
+  cfo: {
+    label: "CFO",
+    icon: "💰",
+    description: "Finanzen & Cash-Flow",
+    kpis: [
+      { label: "Umsatz",           category: "revenue"    },
+      { label: "EBITDA",           category: "ebitda"     },
+      { label: "Cashflow",         category: "cashflow"   },
+      { label: "Burn Rate",        category: "burn"       },
+      { label: "ROI",              category: "roi"        },
+    ],
+  },
+  coo: {
+    label: "COO",
+    icon: "⚙️",
+    description: "Operations & Prozesse",
+    kpis: [
+      { label: "Kundenzufriedenheit", category: "nps"       },
+      { label: "Prozesseffizienz",    category: "efficiency" },
+      { label: "Lieferzeit (Ø)",      category: "delivery"  },
+      { label: "Support-Tickets",     category: "support"   },
+      { label: "Mitarbeiter-KPI",     category: "hr"        },
+    ],
+  },
+  strategist: {
+    label: "Stratege",
+    icon: "🎯",
+    description: "Markt & Wettbewerb",
+    kpis: [
+      { label: "Marktanteil",        category: "market"       },
+      { label: "Wachstumstrend",     category: "growth"       },
+      { label: "Wettbewerbs-Index",  category: "competitive"  },
+      { label: "Kundenbindungsrate", category: "retention"    },
+      { label: "Innovation-KPI",     category: "innovation"   },
+    ],
+  },
+  assistant: {
+    label: "Assistent",
+    icon: "🤝",
+    description: "Überblick & Support",
+    kpis: [
+      { label: "Umsatz",           category: "revenue"   },
+      { label: "Traffic",          category: "traffic"   },
+      { label: "Offene Aufgaben",  category: "tasks"     },
+      { label: "Alerts",           category: "alerts"    },
+      { label: "Team-Aktivität",   category: "team"      },
+    ],
+  },
 };
 
-const emailModule = {
-  stats: [
-    { label: "Öffnungsrate", value: "42%" },
-    { label: "Klickrate", value: "18%" },
-    { label: "Conversion", value: "4,6%" },
-    { label: "Letzte Kampagne", value: "Spring Drop" },
-  ],
-  suggestions: [
-    "Reaktivierungsserie für Inaktive (3 Steps)",
-    "VIP-Angebot an Top 5% Käufer heute 18:00",
-    "Wöchentlicher Deal-Newsletter automatisieren",
-  ],
+const ROLE_STORAGE_KEY = "intlyst_dashboard_role";
+
+// ─── Static fallback data ─────────────────────────────────────────────────────
+const FALLBACK_KPIS = [
+  { label: "Umsatz",          value: "–",    delta: null },
+  { label: "Neue Kunden",     value: "–",    delta: null },
+  { label: "Traffic",         value: "–",    delta: null },
+  { label: "Conversion Rate", value: "–",    delta: null },
+  { label: "Ø Bestellwert",   value: "–",    delta: null },
+];
+
+const FALLBACK_WARNING = {
+  title: "Conversion Rate rückläufig",
+  detail: "Checkout Drop-offs ab Schritt 2 — Mobile Nutzern brechen 14% häufiger ab.",
+  action: "Analyse öffnen",
+  href: "/analyse",
 };
 
-const analyticsFindings = [
-  { title: "Anomalie: Checkout LCP 3.2s", impact: "Hoch", action: "Bildkompression & CDN aktivieren" },
-  { title: "Trend: Organischer Traffic +22%", impact: "Mittel", action: "SEO Playbook ausrollen" },
-  { title: "Muster: CRM Nurture steigert AOV +9%", impact: "Hoch", action: "Sequenz auf Neukunden anwenden" },
-];
+const FALLBACK_OPPORTUNITY = {
+  title: "Organischer Traffic steigt",
+  detail: "+18,9% durch Social Push — SEO-Momentum nutzen.",
+  action: "Strategie planen",
+  href: "/command",
+};
 
-const taskModule = [
-  { title: "Checkout-Ladezeit <2.5s", owner: "Tech", due: "Heute", impact: "Hoch" },
-  { title: "3 Instagram Reels generieren & planen", owner: "Marketing", due: "Heute", impact: "Hoch" },
-  { title: "B2B Outreach Sequenz aktualisieren", owner: "Sales", due: "Diese Woche", impact: "Mittel" },
-];
+const FALLBACK_ACTION = {
+  title: "Checkout-Ladezeit optimieren",
+  detail: "Mobile Conversion kann durch Bildkompression & CDN sofort verbessert werden. Impact: Hoch.",
+  owner: "Tech",
+  kpi: "Conversion Rate",
+};
 
-const securityBadges = [
-  "DSGVO Ready",
-  "SOC 2 in Arbeit",
-  "End-to-End verschlüsselt",
-  "Audit-Logs aktiv",
-];
-
+// ─── Component ────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { authHeader } = useAuth();
-  const today = useMemo(
-    () =>
-      new Intl.DateTimeFormat("de-DE", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      }).format(new Date()),
-    []
+
+  const today = useMemo(() =>
+    new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date()), []);
+
+  const [causeData, setCauseData]     = useState([]);
+  const [actionCreated, setActionCreated] = useState(false);
+  const [selectedRole, setSelectedRole]   = useState(
+    () => localStorage.getItem(ROLE_STORAGE_KEY) || "ceo"
   );
 
-  const [ctaState, setCtaState] = useState("idle"); // idle | busy | done
-  const [postBusy, setPostBusy] = useState(false);
-  const [emailBusy, setEmailBusy] = useState(false);
-  const [causeData, setCauseData] = useState([]);
+  const roleConfig = ROLE_KPI_CONFIGS[selectedRole] || ROLE_KPI_CONFIGS.ceo;
+
+  function changeRole(roleKey) {
+    setSelectedRole(roleKey);
+    localStorage.setItem(ROLE_STORAGE_KEY, roleKey);
+  }
+
+  // Week progress
+  const weekDay = new Date().getDay();
+  const weekProgress = weekDay === 0 || weekDay === 6 ? 100 : Math.round((weekDay / 5) * 100);
 
   useEffect(() => {
     let alive = true;
-    (async () => {
-      try {
-        const res = await fetch("/api/decision/causes", { headers: authHeader() });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (alive) setCauseData(data.items || []);
-      } catch (err) {
-        console.error("Cause fetch failed", err);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
+    fetch("/api/decision/causes", { headers: authHeader() })
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(data => { if (alive) setCauseData(data.items || []); })
+      .catch(() => {});
+    return () => { alive = false; };
   }, [authHeader]);
 
-  const causeList = useMemo(() => {
-    if (causeData.length > 0) {
-      return causeData.slice(0, 4).map((item) => ({
-        id: item.event_id,
-        label: item.metric_label,
-        text: item.summary,
-        tone: item.direction === "down" ? "down" : "up",
-        impact: item.top_causes?.[0]?.impact_level || "mittel",
-      }));
+  // Top warning & opportunity from live data
+  const topWarning = useMemo(() => {
+    const downEvents = causeData.filter(e => e.direction === "down");
+    if (downEvents.length > 0) {
+      const e = downEvents[0];
+      return {
+        title: e.metric_label + " rückläufig",
+        detail: e.summary,
+        action: "Analyse öffnen",
+        href: "/analyse",
+      };
     }
-    return fallbackCauses.map((text, idx) => ({ id: idx, label: "Signal", text, tone: "neutral", impact: "mittel" }));
+    return FALLBACK_WARNING;
   }, [causeData]);
 
-  function handleOneClick() {
-    if (ctaState === "busy") return;
-    setCtaState("busy");
-    setTimeout(() => setCtaState("done"), 600);
-    setTimeout(() => setCtaState("idle"), 2200);
-  }
+  const topOpportunity = useMemo(() => {
+    const upEvents = causeData.filter(e => e.direction === "up");
+    if (upEvents.length > 0) {
+      const e = upEvents[0];
+      return {
+        title: e.metric_label + " steigt",
+        detail: e.summary,
+        action: "Momentum nutzen",
+        href: "/command",
+      };
+    }
+    return FALLBACK_OPPORTUNITY;
+  }, [causeData]);
 
-  function handlePost() {
-    setPostBusy(true);
-    setTimeout(() => setPostBusy(false), 1200);
-  }
-
-  function handleEmail() {
-    setEmailBusy(true);
-    setTimeout(() => setEmailBusy(false), 1400);
+  function handleCreateAction() {
+    setActionCreated(true);
+    setTimeout(() => setActionCreated(false), 3000);
   }
 
   return (
     <div className="ceo-shell">
+      {/* Header */}
       <header className="ceo-hero">
         <div>
-          <p className="eyebrow">So läuft dein Unternehmen heute</p>
-          <h1>3-Sekunden-Überblick für CEOs</h1>
+          <p className="eyebrow">3-Sekunden-Überblick</p>
+          <h1>Wie läuft dein Unternehmen?</h1>
           <p className="sub">{today}</p>
         </div>
-        <div className="hero-note">
-          <span className="dot" />
-          <span>Erkennen → Verstehen → Umsetzen in einem Flow.</span>
+        <div className="hero-note" style={{ alignItems: "center" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+            <div style={{ fontSize: 12, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Wochenfortschritt</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 120, height: 8, background: "#e5e7eb", borderRadius: 4, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${weekProgress}%`, background: "#0f9f6e", borderRadius: 4, transition: "width 0.5s ease" }} />
+              </div>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>{weekProgress}%</span>
+            </div>
+          </div>
         </div>
       </header>
 
-      {/* Bereich 1 – Status */}
+      {/* Role Selector */}
+      <section className="ceo-section" style={{ paddingBottom: "var(--s-4)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "var(--s-3)" }}>
+          <div>
+            <div style={{ fontSize: "var(--text-xs)", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+              Dashboard-Ansicht
+            </div>
+            <div style={{ fontWeight: 700, fontSize: "var(--text-sm)", color: "var(--text)" }}>
+              {roleConfig.icon} {roleConfig.label} — {roleConfig.description}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
+            {Object.entries(ROLE_KPI_CONFIGS).map(([key, cfg]) => (
+              <button key={key} onClick={() => changeRole(key)} style={{
+                padding: "5px 12px", borderRadius: "999px", cursor: "pointer",
+                border: "1px solid var(--border)",
+                background: selectedRole === key ? "#0f172a" : "var(--surface)",
+                color: selectedRole === key ? "#fff" : "var(--text)",
+                fontSize: "var(--text-xs)", fontWeight: 600,
+              }}>
+                {cfg.icon} {cfg.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* KPIs — role specific */}
       <section className="ceo-section kpi-section">
-        <div className="section-title">Status des Unternehmens</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <div className="section-title" style={{ marginBottom: 0 }}>
+            {roleConfig.icon} {roleConfig.label}-KPIs
+          </div>
+          <Link to="/settings" style={{ fontSize: "var(--text-xs)", color: "var(--accent)", textDecoration: "none", fontWeight: 600 }}>
+            Daten verbinden →
+          </Link>
+        </div>
         <div className="kpi-grid">
-          {kpiCards.map((kpi) => (
+          {roleConfig.kpis.map((kpi) => (
             <div key={kpi.label} className="kpi-card">
               <div className="kpi-label">{kpi.label}</div>
-              <div className="kpi-value">{kpi.value}</div>
-              <div className={`kpi-delta ${kpi.delta.startsWith("-") ? "down" : "up"}`}>
-                {kpi.delta}
-              </div>
+              <div className="kpi-value" style={{ color: "var(--muted)" }}>–</div>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Keine Daten</div>
             </div>
           ))}
         </div>
+        <div style={{ marginTop: "var(--s-3)", fontSize: "var(--text-xs)", color: "var(--muted)" }}>
+          Live-Daten verfügbar nach Verbinden deiner Datenquellen in{" "}
+          <Link to="/integrations" style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 600 }}>Integrationen</Link>.
+        </div>
       </section>
 
-      {/* Bereich 2 – Problem & Ursache */}
+      {/* Warning + Opportunity */}
       <section className="ceo-section analysis-section">
-        <div className="analysis-card">
-          <div className="section-title">Was sich gerade verändert hat</div>
-          <div className="change-list">
-            {changeSignals.map((item) => (
-              <div key={item.title} className="change-row">
-                <span className="change-dot" />
-                <div>
-                  <div className="change-title">{item.title}</div>
-                  <div className="change-detail">{item.detail}</div>
-                </div>
-              </div>
-            ))}
+        {/* Warning */}
+        <div className="analysis-card" style={{ borderLeft: "4px solid #ef4444", borderRadius: "18px" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: "var(--s-2)" }}>
+            <span style={{ fontSize: 20 }}>⚠️</span>
+            <div className="section-title" style={{ marginBottom: 0, color: "#b91c1c" }}>Wichtigste Warnung</div>
           </div>
+          <div className="change-title">{topWarning.title}</div>
+          <div className="change-detail" style={{ marginTop: 6, lineHeight: 1.6 }}>{topWarning.detail}</div>
+          <Link to={topWarning.href} style={{
+            display: "inline-block", marginTop: "var(--s-3)",
+            padding: "6px 16px", borderRadius: "var(--r-sm)",
+            background: "#fef2f2", color: "#b91c1c",
+            fontSize: "var(--text-xs)", fontWeight: 700, textDecoration: "none",
+          }}>
+            {topWarning.action} →
+          </Link>
         </div>
 
-        <div className="analysis-card small">
-          <div className="section-title">Warum das passiert</div>
-          <ul className="cause-list">
-            {causeList.map((c) => (
-              <li key={c.id} style={{ display: "grid", gap: 4 }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <span
-                    style={{
-                      padding: "4px 8px",
-                      borderRadius: "999px",
-                      background: c.tone === "down" ? "#fee2e2" : c.tone === "up" ? "#dcfce7" : "#e5e7eb",
-                      color: "#111827",
-                      fontSize: "12px",
-                      textTransform: "capitalize",
-                    }}
-                  >
-                    {c.impact}
-                  </span>
-                  <span style={{ fontWeight: 700 }}>{c.label}</span>
-                </div>
-                <div style={{ color: "var(--c-text-3)", fontSize: "var(--text-sm)" }}>{c.text}</div>
-              </li>
-            ))}
-          </ul>
+        {/* Opportunity */}
+        <div className="analysis-card small" style={{ borderLeft: "4px solid #10b981", borderRadius: "18px" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: "var(--s-2)" }}>
+            <span style={{ fontSize: 20 }}>🚀</span>
+            <div className="section-title" style={{ marginBottom: 0, color: "#065f46" }}>Größte Chance</div>
+          </div>
+          <div className="change-title">{topOpportunity.title}</div>
+          <div className="change-detail" style={{ marginTop: 6, lineHeight: 1.6 }}>{topOpportunity.detail}</div>
+          <Link to={topOpportunity.href} style={{
+            display: "inline-block", marginTop: "var(--s-3)",
+            padding: "6px 16px", borderRadius: "var(--r-sm)",
+            background: "#ecfdf5", color: "#065f46",
+            fontSize: "var(--text-xs)", fontWeight: 700, textDecoration: "none",
+          }}>
+            {topOpportunity.action} →
+          </Link>
         </div>
       </section>
 
-      {/* Bereich 3 – 1-Klick-Umsetzung */}
+      {/* Recommended Action */}
       <section className="ceo-section action-section">
         <div className="action-card">
           <div>
-            <div className="section-title">Das solltest du jetzt tun</div>
-            <div className="action-list">
-              {actions.map((a) => (
-                <div key={a} className="action-item">
-                  <span className="bullet" />
-                  {a}
-                </div>
-              ))}
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: "var(--s-2)" }}>
+              <span style={{ fontSize: 20 }}>🎯</span>
+              <div className="section-title" style={{ marginBottom: 0 }}>Empfohlene Aktion heute</div>
             </div>
-            <p className="action-sub">Automatisch vorbereitet: Drafts, Assets, Owner.</p>
+            <div className="change-title" style={{ fontSize: 18 }}>{FALLBACK_ACTION.title}</div>
+            <div className="change-detail" style={{ marginTop: 8, lineHeight: 1.6 }}>{FALLBACK_ACTION.detail}</div>
+            <div style={{ display: "flex", gap: "var(--s-3)", marginTop: "var(--s-3)", flexWrap: "wrap" }}>
+              <span style={{ padding: "3px 10px", borderRadius: "999px", background: "#dbeafe", color: "#1d4ed8", fontSize: "var(--text-xs)", fontWeight: 600 }}>
+                Verantwortlich: {FALLBACK_ACTION.owner}
+              </span>
+              <span style={{ padding: "3px 10px", borderRadius: "999px", background: "#ede9fe", color: "#6d28d9", fontSize: "var(--text-xs)", fontWeight: 600 }}>
+                KPI: {FALLBACK_ACTION.kpi}
+              </span>
+            </div>
           </div>
-          <button className={`cta ${ctaState}`} onClick={handleOneClick}>
-            {ctaState === "busy" && "Wird gestartet..."}
-            {ctaState === "done" && "Gestartet ✅"}
-            {ctaState === "idle" && "JETZT UMSETZEN (1 Klick)"}
-          </button>
+          <div style={{ display: "flex", gap: "var(--s-3)", marginTop: "var(--s-4)", flexWrap: "wrap" }}>
+            <button
+              className={`cta ${actionCreated ? "done" : "idle"}`}
+              onClick={handleCreateAction}
+              disabled={actionCreated}
+            >
+              {actionCreated ? "Aufgabe erstellt ✅" : "Als Aufgabe erstellen"}
+            </button>
+            <Link to="/command" style={{
+              padding: "12px 20px", borderRadius: "var(--r-md)",
+              border: "1px solid var(--border)", background: "transparent",
+              color: "var(--text)", fontSize: 14, fontWeight: 600,
+              textDecoration: "none", display: "flex", alignItems: "center",
+            }}>
+              Im Command Center planen →
+            </Link>
+          </div>
         </div>
       </section>
 
+      {/* Footer Navigation */}
       <footer className="ceo-footer">
-        <div className="foot-note">Mehr Tiefe? Öffne den Command Center für Live-Daten & Freigaben.</div>
-        <a className="ghost-link" href="/ceo">Zum Command Center →</a>
+        <div className="foot-note">
+          Mehr Details? Wähle deinen Bereich:
+        </div>
+        <div style={{ display: "flex", gap: "var(--s-3)", flexWrap: "wrap", marginTop: "var(--s-3)" }}>
+          {[
+            { label: "Command Center", href: "/command", emoji: "🎯" },
+            { label: "Analyse",        href: "/analyse", emoji: "📊" },
+            { label: "Aufgaben",       href: "/tasks",   emoji: "✅" },
+            { label: "AI-Empfehlungen",href: "/ceo",     emoji: "🤖" },
+            { label: "Alerts",         href: "/alerts",  emoji: "🔔" },
+          ].map(item => (
+            <Link key={item.href} to={item.href} style={{
+              display: "flex", gap: "var(--s-2)", alignItems: "center",
+              padding: "8px 16px", borderRadius: "var(--r-md)",
+              border: "1px solid var(--border)", background: "var(--surface)",
+              color: "var(--text)", textDecoration: "none",
+              fontSize: 14, fontWeight: 500,
+            }}>
+              {item.emoji} {item.label}
+            </Link>
+          ))}
+        </div>
       </footer>
-
-      {/* Social Media Modul */}
-      <section className="ceo-section grid-2">
-        <div className="card luxe-card">
-          <div className="section-title">Social Media — Autopilot</div>
-          <div className="stat-row">
-            {socialModule.stats.map((s) => (
-              <div key={s.label} className="pill-stat">
-                <div className="pill-label">{s.label}</div>
-                <div className="pill-value">{s.value}</div>
-              </div>
-            ))}
-          </div>
-          <div className="idea-list">
-            {socialModule.ideas.map((idea) => (
-              <div key={idea} className="idea-row">
-                <span className="bullet" />
-                {idea}
-              </div>
-            ))}
-          </div>
-          <div className="cta-row">
-            <button className={`ghost-btn ${postBusy ? "busy" : ""}`} onClick={handlePost}>
-              {postBusy ? "Erstellt..." : "POST AUTOMATISCH ERSTELLEN"}
-            </button>
-            <button className="mini-btn">Planen</button>
-          </div>
-        </div>
-
-        {/* E-Mail Marketing Modul */}
-        <div className="card luxe-card">
-          <div className="section-title">E-Mail Marketing</div>
-          <div className="stat-row">
-            {emailModule.stats.map((s) => (
-              <div key={s.label} className="pill-stat">
-                <div className="pill-label">{s.label}</div>
-                <div className="pill-value">{s.value}</div>
-              </div>
-            ))}
-          </div>
-          <div className="idea-list">
-            {emailModule.suggestions.map((item) => (
-              <div key={item} className="idea-row">
-                <span className="bullet" />
-                {item}
-              </div>
-            ))}
-          </div>
-          <div className="cta-row">
-            <button className={`ghost-btn ${emailBusy ? "busy" : ""}`} onClick={handleEmail}>
-              {emailBusy ? "Wird gesendet..." : "JETZT SENDEN"}
-            </button>
-            <button className="mini-btn">Termin planen</button>
-          </div>
-        </div>
-      </section>
-
-      {/* Deep Analytics & Tasks */}
-      <section className="ceo-section grid-2">
-        <div className="card luxe-card">
-          <div className="section-title">Deep Analytics & Insights</div>
-          <div className="trend-bar">
-            <div className="trend-label">Historie vs. Forecast</div>
-            <div className="trend-line">
-              <div className="trend-progress" />
-            </div>
-            <div className="trend-foot">Drill-Down & Parallax-Effekt beim Hover</div>
-          </div>
-          <div className="analytics-list">
-            {analyticsFindings.map((f) => (
-              <div key={f.title} className="analytics-row">
-                <div>
-                  <div className="change-title">{f.title}</div>
-                  <div className="change-detail">{f.action}</div>
-                </div>
-                <span className="badge-impact">{f.impact}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="card luxe-card">
-          <div className="section-title">Automatisiertes Aufgaben-Management</div>
-          <div className="task-list">
-            {taskModule.map((t) => (
-              <div key={t.title} className="task-row">
-                <div>
-                  <div className="change-title">{t.title}</div>
-                  <div className="change-detail">{t.owner} · {t.due}</div>
-                </div>
-                <span className="badge-impact">{t.impact}</span>
-              </div>
-            ))}
-          </div>
-          <div className="cta-row">
-            <button className="ghost-btn">Aufgaben bestätigen</button>
-            <button className="mini-btn">Sync mit Team</button>
-          </div>
-        </div>
-      </section>
-
-      {/* Security & Compliance */}
-      <section className="ceo-section">
-        <div className="card luxe-card">
-          <div className="section-title">Sicherheit & Compliance</div>
-          <div className="badge-row">
-            {securityBadges.map((b) => (
-              <span key={b} className="security-badge">{b}</span>
-            ))}
-          </div>
-          <p className="action-sub">Rollen & Rechte · Audit-Logs · Verschlüsselung ruhend & in Transit.</p>
-        </div>
-      </section>
     </div>
   );
 }

@@ -602,3 +602,54 @@ def seed_demo_user(request: Request, db: Session = Depends(get_db)):
         import traceback
         logger.error(f"Demo-User-Seed-Fehler: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Demo-User-Seed-Fehler: {e}")
+
+
+# ─── GDPR: Recht auf Löschung (Art. 17 DSGVO) ────────────────────────────────
+class EraseAccountRequest(BaseModel):
+    password: str
+    confirm_text: str  # must equal "KONTO LÖSCHEN"
+
+
+@router.delete("/erase-account", status_code=200)
+def erase_account(
+    body: EraseAccountRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    DSGVO Art. 17 – Recht auf Löschung.
+    Anonymisiert alle personenbezogenen Daten des Nutzers.
+    Der Datensatz bleibt für die Audit-Integrität erhalten, enthält aber keine PII mehr.
+    """
+    if body.confirm_text != "KONTO LÖSCHEN":
+        raise HTTPException(
+            status_code=400,
+            detail="Bestätigungstext stimmt nicht überein. Bitte 'KONTO LÖSCHEN' eingeben.",
+        )
+    if not verify_password(body.password, current_user.password_hash):
+        logger.warning("GDPR_ERASE_WRONG_PASSWORD user_id=%s", current_user.id)
+        raise HTTPException(status_code=403, detail="Falsches Passwort.")
+
+    user_id    = current_user.id
+    anon_email = f"deleted_{user_id}@anon.invalid"
+
+    # Anonymise – keep row for referential integrity & audit trail
+    current_user.email          = anon_email
+    current_user.name           = "Gelöschter Nutzer"
+    current_user.company        = None
+    current_user.industry       = None
+    current_user.password_hash  = "ERASED"
+    current_user.is_active      = False
+
+    db.commit()
+
+    logger.info(
+        "GDPR_ERASE_ACCOUNT user_id=%s anonymised_email=%s",
+        user_id, anon_email,
+    )
+    return {
+        "message": (
+            "Konto erfolgreich anonymisiert. "
+            "Alle personenbezogenen Daten wurden gemäß DSGVO Art. 17 gelöscht."
+        )
+    }

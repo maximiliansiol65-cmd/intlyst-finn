@@ -44,6 +44,7 @@ const Mehr = lazy(() => import("./pages/Mehr"));
 const ReportsHub = lazy(() => import("./pages/ReportsHub"));
 const Integrations = lazy(() => import("./pages/Integrations"));
 const Ceo = lazy(() => import("./pages/Ceo"));
+const CommandCenter = lazy(() => import("./pages/CommandCenter"));
 const ReviewAudit = lazy(() => import("./pages/ReviewAudit"));
 const Social = lazy(() => import("./pages/Social"));
 
@@ -210,6 +211,7 @@ function AppRoutes() {
             <Route path="/mehr"         element={<Mehr />} />
             <Route path="/integrations" element={<Integrations />} />
             <Route path="/social"      element={<Social />} />
+            <Route path="/command"     element={<CommandCenter />} />
             <Route path="/ceo"         element={<Ceo />} />
             <Route path="/review-audit" element={<ReviewAudit />} />
 

@@ -167,6 +167,31 @@ function KontoTab({ user, authHeader, logout }) {
 
   const [showDelete, setShowDelete] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleEraseAccount() {
+    if (deleteConfirm !== "KONTO LÖSCHEN" || !deletePassword) return;
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/auth/erase-account", {
+        method: "DELETE",
+        headers: { ...authHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({ password: deletePassword, confirm_text: deleteConfirm }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.detail || "Fehler beim Löschen des Kontos.");
+        return;
+      }
+      toast.success("Konto erfolgreich gelöscht. Du wirst abgemeldet.");
+      setTimeout(() => logout(), 1500);
+    } catch {
+      toast.error("Netzwerkfehler. Bitte erneut versuchen.");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function saveProfile() {
     setSaving(true);
@@ -257,23 +282,60 @@ function KontoTab({ user, authHeader, logout }) {
         <button className="btn btn-secondary btn-sm" onClick={logout}>Abmelden</button>
       </div>
 
-      {/* Danger zone */}
+      {/* GDPR / Danger zone */}
       <div className="card" style={{ padding: "var(--s-6)", borderLeft: "3px solid var(--c-danger)" }}>
-        <div className="section-title" style={{ marginBottom: "var(--s-2)", color: "var(--c-danger)" }}>Gefahrenzone</div>
-        <p style={{ fontSize: "var(--text-sm)", color: "var(--c-text-3)", marginBottom: "var(--s-4)" }}>
-          Das Löschen deines Kontos ist permanent und kann nicht rückgängig gemacht werden.
+        <div className="section-title" style={{ marginBottom: "var(--s-2)", color: "var(--c-danger)" }}>
+          Datenschutz & Kontolöschung (DSGVO Art. 17)
+        </div>
+        <p style={{ fontSize: "var(--text-sm)", color: "var(--c-text-3)", marginBottom: "var(--s-4)", lineHeight: 1.6 }}>
+          Gemäß DSGVO Art. 17 hast du das Recht auf Löschung deiner personenbezogenen Daten.
+          Das Anonymisieren deines Kontos ist <strong>permanent und kann nicht rückgängig gemacht werden</strong>.
+          Alle persönlichen Daten (Name, E-Mail, Unternehmen) werden unwiderruflich gelöscht.
         </p>
         {!showDelete ? (
-          <button className="btn btn-danger btn-sm" onClick={() => setShowDelete(true)}>Konto löschen</button>
+          <button className="btn btn-danger btn-sm" onClick={() => setShowDelete(true)}>
+            Konto löschen (DSGVO Art. 17)
+          </button>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
-            <p style={{ fontSize: "var(--text-sm)", color: "var(--c-danger)" }}>
-              Gib <strong>LÖSCHEN</strong> ein um zu bestätigen:
+            <p style={{ fontSize: "var(--text-sm)", color: "var(--c-danger)", fontWeight: 600 }}>
+              ⚠️ Diese Aktion ist nicht rückgängig zu machen.
             </p>
-            <input className="input" value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} placeholder="LÖSCHEN" />
-            <div className="flex gap-3">
-              <button className="btn btn-secondary btn-sm" onClick={() => { setShowDelete(false); setDeleteConfirm(""); }}>Abbrechen</button>
-              <button className="btn btn-danger btn-sm" disabled={deleteConfirm !== "LÖSCHEN"}>Endgültig löschen</button>
+            <div>
+              <label style={{ fontSize: "var(--text-xs)", fontWeight: 600, color: "var(--c-text-3)", display: "block", marginBottom: 4 }}>
+                Aktuelles Passwort zur Bestätigung
+              </label>
+              <input
+                className="input"
+                type="password"
+                value={deletePassword}
+                onChange={e => setDeletePassword(e.target.value)}
+                placeholder="Dein Passwort"
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: "var(--text-xs)", fontWeight: 600, color: "var(--c-text-3)", display: "block", marginBottom: 4 }}>
+                Tippe <strong>KONTO LÖSCHEN</strong> zur Bestätigung
+              </label>
+              <input
+                className="input"
+                value={deleteConfirm}
+                onChange={e => setDeleteConfirm(e.target.value)}
+                placeholder="KONTO LÖSCHEN"
+              />
+            </div>
+            <div style={{ display: "flex", gap: "var(--s-3)" }}>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => { setShowDelete(false); setDeleteConfirm(""); setDeletePassword(""); }}
+              >Abbrechen</button>
+              <button
+                className="btn btn-danger btn-sm"
+                disabled={deleteConfirm !== "KONTO LÖSCHEN" || !deletePassword || deleting}
+                onClick={handleEraseAccount}
+              >
+                {deleting ? "Wird gelöscht..." : "Endgültig löschen"}
+              </button>
             </div>
           </div>
         )}
