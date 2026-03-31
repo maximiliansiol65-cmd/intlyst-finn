@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from database import SessionLocal, init_db, reset_current_workspace_id, set_current_workspace_id
+from models import Base
 from models.error_trace import ErrorTrace
 from security_config import get_runtime_secret_issues, is_configured_secret, is_production_environment
 from services.error_trace_service import record_error_trace
@@ -71,7 +72,7 @@ from routers import (
     reports, abtests, cohorts, funnels, custom_kpis, workspaces, ga4,
     events, briefing, instagram, proactive, shopify, stripe, scheduler,
     decision, action_requests, changes, learning, approval_policy,
-    deep_analytics, proactive, personalization,
+    deep_analytics, personalization,
 )
 
 from api.auth_routes import get_current_user
@@ -480,7 +481,6 @@ app.include_router(decision.router)
 app.include_router(changes.router)
 app.include_router(deep_analytics.router)
 app.include_router(learning.router)
-app.include_router(proactive.router)
 app.include_router(briefing.router)
 app.include_router(instagram.router)
 app.include_router(shopify.router)
