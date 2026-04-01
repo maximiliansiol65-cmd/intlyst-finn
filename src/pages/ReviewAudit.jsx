@@ -37,6 +37,10 @@ function AuditCard({ item }) {
           <div className="label" style={{ marginBottom: 6 }}>Artifacts</div>
           <div style={{ fontSize: "var(--text-xs)", color: "var(--c-text-3)", lineHeight: 1.7 }}>
             {item.artifact_payload.type && <div>Type: {item.artifact_payload.type}</div>}
+            {item.artifact_payload.email?.title && <div>E-Mail: {item.artifact_payload.email.title}</div>}
+            {item.artifact_payload.email?.recipient && <div>Empfaenger: {item.artifact_payload.email.recipient}</div>}
+            {item.artifact_payload.email?.target_kpi && <div>Ziel-KPI: {item.artifact_payload.email.target_kpi}</div>}
+            {item.artifact_payload.email?.subject && <div>Betreff: {item.artifact_payload.email.subject}</div>}
             {item.artifact_payload.report?.report_id && <div>Report: {item.artifact_payload.report.report_id}</div>}
             {item.artifact_payload.mailchimp?.campaign_id && <div>Mailchimp: {item.artifact_payload.mailchimp.campaign_id}</div>}
             {item.artifact_payload.hubspot?.task_id && <div>HubSpot: {item.artifact_payload.hubspot.task_id}</div>}
@@ -89,12 +93,21 @@ export default function ReviewAudit() {
     return items.filter((item) => item.status === filter || item.progress_stage === filter);
   }, [items, filter]);
 
+  const FILTER_LABELS = {
+    all: "Alle",
+    pending_approval: "Freigabe offen",
+    approved: "Freigegeben",
+    executed: "Umgesetzt",
+    awaiting_second_approval: "2. Freigabe",
+    rejected: "Abgelehnt",
+  };
+
   return (
     <div style={{ padding: "var(--s-6)", maxWidth: 920, margin: "0 auto", display: "grid", gap: "var(--s-5)" }}>
       <div>
-        <h1 style={{ fontSize: "var(--text-xl)", fontWeight: 700, margin: 0 }}>Review & Audit</h1>
+        <h1 style={{ fontSize: "var(--text-xl)", fontWeight: 700, margin: 0 }}>Review & Fortschrittskontrolle</h1>
         <p style={{ fontSize: "var(--text-sm)", color: "var(--c-text-3)", marginTop: 6 }}>
-          Freigaben, Review-Historie, Artefakte und Fortschritt aller strategischen Umsetzungen.
+          Freigaben, Review-Historie, Artefakte und Fortschritt aller strategischen Umsetzungen an einem Ort.
         </p>
       </div>
 
@@ -106,7 +119,7 @@ export default function ReviewAudit() {
             onClick={() => setFilter(entry)}
             style={{ background: filter === entry ? "#111827" : undefined, color: filter === entry ? "#fff" : undefined }}
           >
-            {entry}
+            {FILTER_LABELS[entry] || entry}
           </button>
         ))}
       </div>

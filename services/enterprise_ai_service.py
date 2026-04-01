@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Optional
 import asyncio
+import json
 import os
 
 import httpx
@@ -15,6 +16,7 @@ from services.approval_policy_service import build_policy_snapshot, get_policy_s
 from services.decision_service import analyze_causes, build_recommendations, get_decision_events
 from services.external_signal_service import get_external_signals
 from services.learning_service import summarize_learning
+from models.action_request import ActionRequest
 from models.task import Task
 from api.auth_routes import User as AuthUser, WorkspaceMembership
 
@@ -118,6 +120,50 @@ def _priority_to_deadline(priority: str) -> int:
     if priority == "low":
         return 6
     return 4
+
+
+def _build_email_performance(db: Session, workspace_id: Optional[int], lookback_days: int = 30) -> dict[str, Any]:
+    since = datetime.utcnow() - timedelta(days=lookback_days)
+    query = db.query(ActionRequest).filter(ActionRequest.created_at >= since)
+    if workspace_id:
+        query = query.filter(ActionRequest.workspace_id == workspace_id)
+
+    campaigns = []
+    for row in query.all():
+        if row.execution_type not in {"email_draft", "strategy_bundle"}:
+            continue
+        try:
+            live_feedback = json.loads(row.live_feedback_json) if row.live_feedback_json else {}
+        except Exception:
+            live_feedback = {}
+        aggregate = (live_feedback or {}).get("aggregate") or {}
+        campaigns.append({
+            "open_rate": float(aggregate.get("open_rate") or 0.0),
+            "click_rate": float(aggregate.get("click_rate") or 0.0),
+        })
+
+    if not campaigns:
+        return {
+            "last_30d_campaigns": 0,
+            "avg_open_rate": 22.0,
+            "avg_click_rate": 2.4,
+            "best_open_rate": 24.0,
+            "best_click_rate": 2.8,
+            "benchmark_open_rate": 21.0,
+            "benchmark_click_rate": 2.1,
+        }
+
+    avg_open = sum(item["open_rate"] for item in campaigns) / len(campaigns)
+    avg_click = sum(item["click_rate"] for item in campaigns) / len(campaigns)
+    return {
+        "last_30d_campaigns": len(campaigns),
+        "avg_open_rate": round(avg_open, 2),
+        "avg_click_rate": round(avg_click, 2),
+        "best_open_rate": round(max(item["open_rate"] for item in campaigns), 2),
+        "best_click_rate": round(max(item["click_rate"] for item in campaigns), 2),
+        "benchmark_open_rate": 21.0,
+        "benchmark_click_rate": 2.1,
+    }
 
 
 def _owner_role_hint(category: str) -> str:
@@ -509,11 +555,23 @@ def build_enterprise_ai_response(
         "bounce_rate_pct": marketing_mix.get("bounce_rate_pct"),
         "avg_session_duration_sec": marketing_mix.get("avg_session_duration_sec"),
         "social": marketing_mix.get("social"),
+        "company_name": getattr(current_user, "company", None) or "dein Unternehmen",
+        "company_role": getattr(current_user, "role", None) or "admin",
+        "industry": getattr(current_user, "industry", None) or industry,
+        "lookback_days": lookback_days,
+        "metric_summary": metric_summary,
         "crm": crm_snapshot,
+        "commerce": {
+            "avg_order_value": getattr(aggregated.stripe, "avg_order_value", None) if aggregated and getattr(aggregated, "stripe", None) else None,
+            "top_customers": getattr(aggregated.stripe, "top_customers", None) if aggregated and getattr(aggregated, "stripe", None) else None,
+            "total_revenue_30d": getattr(aggregated.internal, "total_revenue_30d", None) if aggregated and getattr(aggregated, "internal", None) else None,
+            "avg_conversion_rate_pct": getattr(aggregated.internal, "avg_conversion_rate_pct", None) if aggregated and getattr(aggregated, "internal", None) else None,
+        },
         "stripe": {
             "refund_rate_pct": getattr(aggregated.stripe, "refund_rate_pct", None) if aggregated and getattr(aggregated, "stripe", None) else None,
             "failed_payments_30d": getattr(aggregated.stripe, "failed_payments_30d", None) if aggregated and getattr(aggregated, "stripe", None) else None,
         },
+        "email_performance": _build_email_performance(db, workspace_id, lookback_days),
         "external_signals": external_signals,
     }
     event_payloads = []

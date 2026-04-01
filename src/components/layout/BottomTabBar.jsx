@@ -17,26 +17,28 @@ const IcoPlanner = () => (<svg width="22" height="22" viewBox="0 0 24 24" fill="
 
 // Alle verfügbaren Tabs (auch für Settings-Editor exportiert)
 export const ALL_TABS = [
-  { id: "dashboard", to: "/",         label: "Dashboard", Icon: IcoHome,    end: true },
-  { id: "command",   to: "/command",  label: "Zentrum",   Icon: IcoCommand           },
+  { id: "dashboard", to: "/",         label: "Entscheid.", Icon: IcoHome,    end: true },
+  { id: "command",   to: "/command",  label: "Priorit.",   Icon: IcoCommand           },
   { id: "analyse",   to: "/analyse",  label: "Analyse",   Icon: IcoChart             },
   { id: "tasks",     to: "/tasks",    label: "Aufgaben",  Icon: IcoCheck             },
-  { id: "alerts",    to: "/alerts",   label: "Alerts",    Icon: IcoBell              },
+  { id: "alerts",    to: "/alerts",   label: "Signale",   Icon: IcoBell              },
   { id: "wachstum",  to: "/wachstum", label: "Wachstum",  Icon: IcoRocket            },
-  { id: "empfehlungen", to: "/ceo",   label: "AI-Berater",Icon: IcoRocket            },
+  { id: "empfehlungen", to: "/ceo",   label: "Beratung",  Icon: IcoRocket            },
   { id: "kunden",    to: "/kunden",   label: "Kunden",    Icon: IcoPeople            },
   { id: "market",    to: "/market",   label: "Markt",     Icon: IcoGlobe             },
   { id: "planner",   to: "/planner",  label: "Planer",    Icon: IcoPlanner           },
   { id: "settings",  to: "/settings", label: "Settings",  Icon: IcoGear              },
-  { id: "mehr",      to: "/mehr",     label: "Mehr",      Icon: IcoGrid              },
+  { id: "review",    to: "/review-audit", label: "Review",    Icon: IcoCheck            },
+  { id: "szenarien", to: "/szenarien", label: "Szenarien", Icon: IcoChart             },
+  { id: "mehr",      to: "/mehr",     label: "System",    Icon: IcoGrid              },
 ];
 
 // Standard-Tabs je Abo — 5 Hauptbereiche für jeden Plan
 export const PLAN_DEFAULTS = {
   trial:         ["dashboard", "command", "tasks", "mehr"],
-  standard:      ["dashboard", "command", "tasks", "alerts", "mehr"],
-  team_standard: ["dashboard", "command", "analyse", "tasks", "mehr"],
-  team_pro:      ["dashboard", "command", "analyse", "tasks", "mehr"],
+  standard:      ["dashboard", "analyse", "command", "tasks", "mehr"],
+  team_standard: ["dashboard", "analyse", "command", "tasks", "mehr"],
+  team_pro:      ["dashboard", "analyse", "command", "tasks", "mehr"],
 };
 
 export const MAX_TABS    = 5;
@@ -83,7 +85,7 @@ export default function BottomTabBar() {
     return () => window.removeEventListener("intlyst-core-mode-changed", onCoreMode);
   }, []);
 
-  const coreIds = ["dashboard", "command", "alerts", "mehr"];
+  const coreIds = ["dashboard", "analyse", "command", "tasks", "mehr"];
 
   const visibleTabs = (coreMode ? coreIds : ids)
     .map(id => ALL_TABS.find(t => t.id === id))

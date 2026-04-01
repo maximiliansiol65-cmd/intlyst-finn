@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useCompanyProfile } from "../../contexts/CompanyProfileContext";
+import { getDashboardRoleCopy } from "../../config/dashboardRoles";
 
 const TYPE_CONFIG = {
   strength: { color: "#10b981", bg: "#10b98115", label: "Staerke" },
@@ -50,6 +52,20 @@ function InsightCard({ insight }) {
       </div>
       <div style={{ fontSize: 13, fontWeight: 600, color: "#1d1d1f", marginBottom: 6 }}>{insight.title}</div>
       <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.6, marginBottom: 8 }}>{insight.description}</div>
+      {insight.kpi_link && (
+        <div
+          style={{
+            fontSize: 11,
+            color: "#334155",
+            background: "#eef2ff",
+            borderRadius: 6,
+            padding: "7px 10px",
+            marginBottom: 8,
+          }}
+        >
+          KPI-Bezug: {insight.kpi_link}
+        </div>
+      )}
       <div
         style={{
           fontSize: 11,
@@ -75,6 +91,11 @@ function InsightCard({ insight }) {
       >
         -&gt; {insight.action}
       </div>
+      {insight.strategic_context && (
+        <div style={{ fontSize: 11, color: "#475569", marginTop: 8, lineHeight: 1.5 }}>
+          Strategische Einordnung: {insight.strategic_context}
+        </div>
+      )}
       {insight.segment && (
         <div style={{ fontSize: 10, color: "#475569", marginTop: 7 }}>
           Segment: {insight.segment}
@@ -85,6 +106,8 @@ function InsightCard({ insight }) {
 }
 
 export default function AiInsights() {
+  const { profile } = useCompanyProfile();
+  const roleCopy = getDashboardRoleCopy(profile);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -119,9 +142,10 @@ export default function AiInsights() {
               letterSpacing: "0.06em",
             }}
           >
-            KI-Insights
+            {roleCopy.insightsLabel}
           </div>
-          {data?.summary && <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>{data.summary}</div>}
+          {data?.ceo_summary && <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>{data.ceo_summary}</div>}
+          {!data?.ceo_summary && data?.summary && <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>{data.summary}</div>}
           {!data?.summary && data?.top_action && <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>{data.top_action}</div>}
         </div>
         <button
@@ -154,16 +178,7 @@ export default function AiInsights() {
             gap: 12,
           }}
         >
-          <div
-            style={{
-              width: 16,
-              height: 16,
-              borderRadius: "50%",
-              border: "2px solid #6366f1",
-              borderTopColor: "transparent",
-              animation: "spin 0.8s linear infinite",
-            }}
-          />
+          <div className="spinner spinner-sm" />
           <span style={{ fontSize: 13, color: "#475569" }}>Claude analysiert deine Daten...</span>
         </div>
       )}
@@ -200,14 +215,14 @@ export default function AiInsights() {
           >
             <div>
               <div style={{ fontSize: 10, color: "#475569", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
-                Analyse-Zusammenfassung
+                {roleCopy.summaryLabel}
               </div>
               <div style={{ fontSize: 12, color: "#374151", marginTop: 4 }}>
                 Health Score: {data.health_score} · {data.health_label}
               </div>
             </div>
             <div style={{ fontSize: 11, color: "#94a3b8", maxWidth: 340 }}>
-              Top Action: {data.top_action}
+              {data.ceo_summary || `Top Action: ${data.top_action}`}
             </div>
           </div>
           {data.insights.map((ins, i) => (
@@ -216,13 +231,6 @@ export default function AiInsights() {
         </div>
       )}
 
-      <style>{`
-        @keyframes spin {
-          to {
-            transform: rotate(360deg);
-          }
-        }
-      `}</style>
     </div>
   );
 }

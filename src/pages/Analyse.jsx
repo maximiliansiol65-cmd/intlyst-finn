@@ -11,6 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useAuth } from "../contexts/AuthContext";
+import { useCompanyProfile } from "../contexts/CompanyProfileContext";
 import {
   HealthRing,
   SkeletonCard,
@@ -246,6 +247,7 @@ function AnalyseInsightCard({ insight }) {
 
 function AnalyseTab() {
   const { authHeader } = useAuth();
+  const { profile } = useCompanyProfile();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -316,11 +318,26 @@ function AnalyseTab() {
   if (error) return <ErrorState message={error} onRetry={retry} />;
   if (!data) return null;
 
-  const insights = data.insights ?? data.analysis ?? [];
+  const rawInsights = data.insights ?? data.analysis ?? [];
+  const insights = [...rawInsights].sort((a, b) => {
+    const order = profile.analysis.prioritizedInsightTypes || [];
+    const left = order.indexOf(a.type);
+    const right = order.indexOf(b.type);
+    return (left === -1 ? 99 : left) - (right === -1 ? 99 : right);
+  });
   const score = data.score ?? data.health_score ?? 0;
 
   return (
     <div>
+      <Card style={{ padding: "var(--s-4) var(--s-5)", marginBottom: "var(--s-5)", background: "var(--c-surface-2)" }}>
+        <div className="label" style={{ marginBottom: "var(--s-2)" }}>
+          Hervorgehobene Analyse für {profile.shortLabel}
+        </div>
+        <p style={{ margin: 0, color: "var(--c-text-2)", lineHeight: 1.7 }}>
+          Fokus auf {profile.analysis.focusAreas.join(", ")}. {profile.analysis.explanation}
+        </p>
+      </Card>
+
       {/* Health ring + summary */}
       <div
         style={{
@@ -423,13 +440,17 @@ function PrognoseTooltip({ active, payload, label }) {
   );
 }
 
-function PrognoseTab() {
+function PrognoseTab({ defaultMetric = "revenue" }) {
   const { authHeader } = useAuth();
-  const [metric, setMetric] = useState("revenue");
+  const [metric, setMetric] = useState(defaultMetric);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
+
+  useEffect(() => {
+    setMetric(defaultMetric);
+  }, [defaultMetric]);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -1362,7 +1383,12 @@ function BenchmarkTab() {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function Analyse() {
-  const [activeTab, setActiveTab] = useState("analyse");
+  const { profile } = useCompanyProfile();
+  const [activeTab, setActiveTab] = useState(profile.analysis.defaultTab || "analyse");
+
+  useEffect(() => {
+    setActiveTab(profile.analysis.defaultTab || "analyse");
+  }, [profile.analysis.defaultTab]);
 
   return (
     <div
@@ -1389,6 +1415,26 @@ export default function Analyse() {
           <p className="page-subtitle" style={{ marginTop: "var(--s-1)" }}>
             KI-Einblicke &middot; Prognosen &middot; Markt &middot; Benchmark
           </p>
+          <div
+            className="card"
+            style={{
+              marginTop: "var(--s-4)",
+              padding: "var(--s-4) var(--s-5)",
+              background: "var(--c-surface-2)",
+            }}
+          >
+            <div className="label" style={{ marginBottom: "var(--s-2)" }}>
+              Fokus für {profile.label}
+            </div>
+            <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap", marginBottom: "var(--s-3)" }}>
+              {profile.analysis.focusAreas.map((item) => (
+                <span key={item} className="badge badge-info badge-sm">{item}</span>
+              ))}
+            </div>
+            <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.7 }}>
+              Handlungsempfehlungen werden für diese Version vereinfacht priorisiert und die passendste Analyse ist bereits vorausgewählt.
+            </p>
+          </div>
 
           {/* Tab bar */}
           <div
@@ -1428,9 +1474,22 @@ export default function Analyse() {
         }}
       >
         {activeTab === "analyse"   && <AnalyseTab />}
-        {activeTab === "prognose"  && <PrognoseTab />}
+        {activeTab === "prognose"  && <PrognoseTab defaultMetric={profile.analysis.forecastMetric} />}
         {activeTab === "markt"     && <MarktTab />}
         {activeTab === "benchmark" && <BenchmarkTab />}
+
+        <Card style={{ marginTop: "var(--s-6)", padding: "var(--s-4) var(--s-5)" }}>
+          <div className="label" style={{ marginBottom: "var(--s-2)" }}>
+            Nächste empfohlene Schritte
+          </div>
+          <div style={{ display: "grid", gap: "var(--s-2)" }}>
+            {profile.analysis.actions.map((action) => (
+              <div key={action} style={{ color: "var(--c-text-2)", fontSize: "var(--text-sm)", lineHeight: 1.65 }}>
+                {action}
+              </div>
+            ))}
+          </div>
+        </Card>
       </div>
     </div>
   );

@@ -28,6 +28,7 @@ import { ToastProvider } from "./contexts/ToastContext";
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { PlanProvider } from "./contexts/PlanContext";
+import { CompanyProfileProvider } from "./contexts/CompanyProfileContext";
 const Login = lazy(() => import("./pages/Login"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -48,6 +49,7 @@ const ReviewAudit = lazy(() => import("./pages/ReviewAudit"));
 const Social = lazy(() => import("./pages/Social"));
 const Planner = lazy(() => import("./pages/Planner"));
 const TeamCenter = lazy(() => import("./pages/TeamCenter"));
+const Szenarien = lazy(() => import("./pages/Szenarien"));
 
 // ── Loader ────────────────────────────────────────────────────────────────────
 function Gear({ size, duration, direction = 1, style = {} }) {
@@ -216,6 +218,7 @@ function AppRoutes() {
             <Route path="/command"     element={<CommandCenter />} />
             <Route path="/ceo"         element={<Ceo />} />
             <Route path="/review-audit" element={<ReviewAudit />} />
+            <Route path="/szenarien"   element={<Szenarien />} />
 
             {/* Legacy redirects */}
             <Route path="/insights"        element={<Navigate to="/analyse" replace />} />
@@ -242,15 +245,17 @@ export default function App() {
     <ErrorBoundary>
     <BrowserRouter>
       <ThemeProvider>
-      <LanguageProvider>
-        <ToastProvider>
-          <PlanProvider>
-            <Suspense fallback={<FullScreenLoader />}>
-              <AppRoutes />
-            </Suspense>
-          </PlanProvider>
-        </ToastProvider>
-      </LanguageProvider>
+        <CompanyProfileProvider>
+          <LanguageProvider>
+            <ToastProvider>
+              <PlanProvider>
+                <Suspense fallback={<FullScreenLoader />}>
+                  <AppRoutes />
+                </Suspense>
+              </PlanProvider>
+            </ToastProvider>
+          </LanguageProvider>
+        </CompanyProfileProvider>
       </ThemeProvider>
     </BrowserRouter>
     </ErrorBoundary>

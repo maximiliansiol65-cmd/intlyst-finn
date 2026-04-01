@@ -1,6 +1,8 @@
 /* eslint-disable */
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { useCompanyProfile } from "../contexts/CompanyProfileContext";
+import { getDashboardRoleCopy } from "../config/dashboardRoles";
 
 const SUGGESTIONS = [
   "Wie war die Performance diese Woche?",
@@ -22,6 +24,8 @@ const IcoSend = () => (
 
 export default function ChatPanel({ isOpen, onClose }) {
   const { authHeader } = useAuth();
+  const { profile } = useCompanyProfile();
+  const roleCopy = getDashboardRoleCopy(profile);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -60,7 +64,7 @@ export default function ChatPanel({ isOpen, onClose }) {
       const res = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeader() },
-        body: JSON.stringify({ message: msg, history }),
+        body: JSON.stringify({ message: msg, history, profile_id: profile?.id }),
       });
       const data = await res.json();
       const reply = data?.reply ?? data?.message ?? data?.content ?? "Keine Antwort erhalten.";
@@ -99,10 +103,10 @@ export default function ChatPanel({ isOpen, onClose }) {
         {/* Header */}
         <div className="chat-header">
           <div>
-            <div className="chat-header-title">✦ INTLYST AI</div>
+            <div className="chat-header-title">✦ {roleCopy.assistantName}</div>
             <div className="chat-header-sub">
               <span className="pulse-dot" aria-hidden="true" />
-              Verbunden mit deinen Daten
+              {roleCopy.connectedLabel}
             </div>
           </div>
           <button
@@ -119,7 +123,7 @@ export default function ChatPanel({ isOpen, onClose }) {
           <div className="chat-empty">
             <div style={{ fontSize: 40, lineHeight: 1, color: "var(--c-text-4)" }}>✦</div>
             <div style={{ fontSize: "var(--text-md)", color: "var(--c-text-2)", fontWeight: 500 }}>
-              Stell mir eine Frage zu deinen Daten
+              {roleCopy.emptyPrompt}
             </div>
             <div className="chat-suggestion-pills">
               {SUGGESTIONS.map((s, i) => (
@@ -164,7 +168,7 @@ export default function ChatPanel({ isOpen, onClose }) {
             ref={inputRef}
             className="chat-input"
             rows={1}
-            placeholder="Frag INTLYST AI…"
+            placeholder={roleCopy.placeholder}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKey}

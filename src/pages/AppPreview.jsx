@@ -16,7 +16,7 @@ const RECOMMENDATIONS = [
 const ACTIONS = [
   { text: "Kampagne Spring Push aktiviert", category: "Marketing", when: "vor 2h" },
   { text: "Experiment Variante B als Gewinner markiert", category: "Produkt", when: "vor 5h" },
-  { text: "Retention-Playbook fuer Risk-Segment gestartet", category: "Sales", when: "gestern" },
+  { text: "Retention-Playbook für Risk-Segment gestartet", category: "Sales", when: "gestern" },
 ];
 
 function Sparkline() {
@@ -158,7 +158,7 @@ export default function AppPreview() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 12 }}>
-        <Card title="Priorisierte Empfehlungen" subtitle="Was als naechstes tun?">
+        <Card title="Priorisierte Empfehlungen" subtitle="Was als nächstes tun?">
           <div style={{ display: "grid", gap: 10 }}>
             {RECOMMENDATIONS.map((item) => (
               <div key={item.title} style={{ border: "1px solid #2e456d", borderRadius: 10, padding: 12, background: "#101a2f" }}>
@@ -171,7 +171,7 @@ export default function AppPreview() {
           </div>
         </Card>
 
-        <Card title="Action Feed" subtitle="Zuletzt ausgefuehrt">
+        <Card title="Action Feed" subtitle="Zuletzt ausgeführt">
           <div style={{ display: "grid", gap: 10 }}>
             {ACTIONS.map((action) => (
               <div key={action.text} style={{ borderLeft: "3px solid #4f7fb8", paddingLeft: 10 }}>

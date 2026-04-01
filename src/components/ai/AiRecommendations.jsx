@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useCompanyProfile } from "../../contexts/CompanyProfileContext";
+import { getDashboardRoleCopy } from "../../config/dashboardRoles";
 
 const PRIORITY_CONFIG = {
   high: { color: "#ef4444", bg: "#ef444412", label: "Hoher Impact" },
@@ -26,6 +28,22 @@ const CATEGORY_LABELS = {
   finance: "Finanzen",
 };
 
+const CATEGORY_OWNER = {
+  marketing: "CMO",
+  product: "Strategist",
+  sales: "COO",
+  operations: "Assistant",
+  finance: "CFO",
+};
+
+const ROLE_COLORS = {
+  CEO: { bg: "#ecfeff", fg: "#0f766e" },
+  COO: { bg: "#eff6ff", fg: "#1d4ed8" },
+  CMO: { bg: "#fff7ed", fg: "#c2410c" },
+  CFO: { bg: "#f5f3ff", fg: "#6d28d9" },
+  Strategist: { bg: "#f0fdf4", fg: "#15803d" },
+};
+
 function SourceBadge({ source }) {
   const sourceConfig = {
     claude: { bg: "#10b9811f", fg: "#10b981", label: "Live KI" },
@@ -51,7 +69,33 @@ function SourceBadge({ source }) {
   );
 }
 
+function SectionList({ title, color, background, border, items }) {
+  if (!items?.length) return null;
+  return (
+    <div
+      style={{
+        background,
+        border: `1px solid ${border}`,
+        borderRadius: 9,
+        padding: "10px 14px",
+      }}
+    >
+      <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+        {title}
+      </div>
+      {items.map((item, i) => (
+        <div key={`${title}-${i}`} style={{ fontSize: 12, color: "#64748b", marginBottom: 4, display: "flex", gap: 6 }}>
+          <span style={{ color, flexShrink: 0 }}>-</span>
+          {item}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function RecommendationsWidget({ onTaskCreated }) {
+  const { profile } = useCompanyProfile();
+  const roleCopy = getDashboardRoleCopy(profile);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -85,6 +129,11 @@ export default function RecommendationsWidget({ onTaskCreated }) {
           title: rec.action_label,
           description: `${rec.description}\n\nErwartetes Ergebnis: ${rec.expected_result}`,
           priority: rec.priority,
+          assigned_to: rec.owner_role || CATEGORY_OWNER[rec.category] || "COO",
+          goal: rec.strategic_context || rec.title,
+          expected_result: rec.expected_result,
+          kpis: rec.kpi_link ? [rec.kpi_link] : [],
+          impact: rec.priority,
         }),
       });
       setCreated((p) => ({ ...p, [rec.id]: "done" }));
@@ -102,7 +151,7 @@ export default function RecommendationsWidget({ onTaskCreated }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 8, flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-            Handlungsempfehlungen
+            {roleCopy.recommendationsLabel}
           </div>
           {data?.source && <SourceBadge source={data.source} />}
           {typeof data?.processing_ms === "number" && (
@@ -148,16 +197,7 @@ export default function RecommendationsWidget({ onTaskCreated }) {
 
       {loading && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#475569", fontSize: 12, padding: "12px 0" }}>
-          <div
-            style={{
-              width: 14,
-              height: 14,
-              borderRadius: "50%",
-              border: "2px solid #6366f1",
-              borderTopColor: "transparent",
-              animation: "spin 0.8s linear infinite",
-            }}
-          />
+          <div className="spinner spinner-sm" />
           Empfehlungen werden berechnet...
         </div>
       )}
@@ -228,6 +268,20 @@ export default function RecommendationsWidget({ onTaskCreated }) {
                   <span style={{ fontSize: 10, color: "#475569", padding: "2px 8px", borderRadius: 4, background: "#e8e8ed" }}>
                     {CATEGORY_LABELS[rec.category] || rec.category}
                   </span>
+                  {rec.owner_role && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                        background: (ROLE_COLORS[rec.owner_role] || ROLE_COLORS.Strategist).bg,
+                        color: (ROLE_COLORS[rec.owner_role] || ROLE_COLORS.Strategist).fg,
+                      }}
+                    >
+                      {rec.owner_role}
+                    </span>
+                  )}
                   <span style={{ fontSize: 10, color: ef.color, marginLeft: "auto", display: "flex", alignItems: "center" }}>
                     Aufwand: {ef.label}
                   </span>
@@ -266,6 +320,51 @@ export default function RecommendationsWidget({ onTaskCreated }) {
                   Datenbezug: {rec.rationale}
                 </div>
 
+                {rec.kpi_link && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "#334155",
+                      background: "#eef2ff",
+                      borderRadius: 6,
+                      padding: "6px 10px",
+                      marginBottom: 10,
+                    }}
+                  >
+                    KPI-Bezug: {rec.kpi_link}
+                  </div>
+                )}
+
+                {rec.priority_reason && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "#7c2d12",
+                      background: "#fff7ed",
+                      borderRadius: 6,
+                      padding: "6px 10px",
+                      marginBottom: 10,
+                    }}
+                  >
+                    Priorisierung: {rec.priority_reason}
+                  </div>
+                )}
+
+                {rec.risk_level && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "#991b1b",
+                      background: "#fef2f2",
+                      borderRadius: 6,
+                      padding: "6px 10px",
+                      marginBottom: 10,
+                    }}
+                  >
+                    Risiko-Level: {rec.risk_level}
+                  </div>
+                )}
+
                 <div
                   style={{
                     fontSize: 11,
@@ -279,6 +378,12 @@ export default function RecommendationsWidget({ onTaskCreated }) {
                 >
                   Ergebnis: {rec.expected_result}
                 </div>
+
+                {rec.strategic_context && (
+                  <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.5, marginBottom: 12 }}>
+                    Strategische Einordnung: {rec.strategic_context}
+                  </div>
+                )}
 
                 <button
                   onClick={() => createTask(rec)}
@@ -302,34 +407,84 @@ export default function RecommendationsWidget({ onTaskCreated }) {
           })}
 
           {filtered.length === 0 && !loading && (
-            <div style={{ color: "#334155", fontSize: 13, padding: "12px 0" }}>Keine Empfehlungen fuer diesen Filter.</div>
+            <div style={{ color: "#334155", fontSize: 13, padding: "12px 0" }}>Keine Empfehlungen für diesen Filter.</div>
           )}
         </div>
       )}
 
-      {data?.strategic?.length > 0 && !loading && (
-        <div
-          style={{
-            background: "#6366f112",
-            border: "1px solid #6366f120",
-            borderRadius: 9,
-            padding: "10px 14px",
-            marginTop: 14,
-          }}
-        >
-          <div style={{ fontSize: 10, fontWeight: 700, color: "#818cf8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
-            Strategische Prioritaeten
-          </div>
-          {data.strategic.map((s, i) => (
-            <div key={i} style={{ fontSize: 12, color: "#64748b", marginBottom: 4, display: "flex", gap: 6 }}>
-              <span style={{ color: "#6366f1", flexShrink: 0 }}>-</span>
-              {s}
+      {!loading && (
+        <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
+          <SectionList
+            title="Strategische Prioritäten"
+            color="#818cf8"
+            background="#6366f112"
+            border="#6366f120"
+            items={data?.strategic}
+          />
+          <SectionList
+            title="Top-Chancen"
+            color="#15803d"
+            background="#10b98112"
+            border="#10b98120"
+            items={data?.opportunities}
+          />
+          <SectionList
+            title="Top-Risiken"
+            color="#dc2626"
+            background="#ef444412"
+            border="#ef444430"
+            items={data?.risks}
+          />
+
+          {data?.scenarios?.length > 0 && (
+            <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Strategische Szenarien
+              </div>
+              {data.scenarios.map((scenario) => (
+                <div key={scenario.name} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "12px 14px" }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", marginBottom: 6 }}>{scenario.name}</div>
+                  <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.55, marginBottom: 6 }}>{scenario.strategy}</div>
+                  <div style={{ fontSize: 11, color: "#334155", marginBottom: 4 }}>KPI-Folge: {scenario.kpi_effect}</div>
+                  <div style={{ fontSize: 11, color: "#991b1b", marginBottom: 4 }}>Hauptrisiko: {scenario.main_risk}</div>
+                  <div style={{ fontSize: 11, color: "#0f172a" }}>Empfehlung: {scenario.recommendation}</div>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
+
+          {data?.role_priorities?.length > 0 && (
+            <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Management-Priorisierung
+              </div>
+              {data.role_priorities.map((entry) => {
+                const tone = ROLE_COLORS[entry.role] || ROLE_COLORS.Strategist;
+                return (
+                  <div key={entry.role} style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 10, padding: "12px 14px" }}>
+                    <div style={{ display: "inline-flex", fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: tone.bg, color: tone.fg, marginBottom: 10 }}>
+                      {entry.role}
+                    </div>
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <div style={{ fontSize: 12, color: "#334155" }}>
+                        Sofort: {(entry.immediate || []).join(" • ") || "Keine Angabe"}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#475569" }}>
+                        Mittelfristig: {(entry.mid_term || []).join(" • ") || "Keine Angabe"}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#64748b" }}>
+                        Langfristig: {(entry.long_term || []).join(" • ") || "Keine Angabe"}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
-      <style>{"@keyframes spin { to { transform: rotate(360deg); } }"}</style>
+      </div>
     </div>
   );
 }

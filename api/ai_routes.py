@@ -147,6 +147,8 @@ class Insight(BaseModel):
     action: str
     impact: str
     impact_pct: float
+    kpi_link: Optional[str] = None
+    strategic_context: Optional[str] = None
     segment: Optional[str] = None
     confidence: int
     quality_score: Optional[int] = None
@@ -157,6 +159,7 @@ class AnalysisResponse(BaseModel):
     generated_at: str
     data_period: str
     summary: str
+    ceo_summary: Optional[str] = None
     health_score: int
     health_label: str
     insights: list[Insight]
@@ -179,6 +182,11 @@ class RecommendationItem(BaseModel):
     category: str
     timeframe: str
     action_label: str
+    owner_role: Optional[str] = None
+    kpi_link: Optional[str] = None
+    priority_reason: Optional[str] = None
+    strategic_context: Optional[str] = None
+    risk_level: Optional[str] = None
     ice_impact: Optional[int] = None      # 1-10: Umsatzwirkung
     ice_confidence: Optional[int] = None  # 1-10: Evidenzstaerke
     ice_ease: Optional[int] = None        # 1-10: Umsetzbarkeit
@@ -187,11 +195,30 @@ class RecommendationItem(BaseModel):
     quality_label: Optional[str] = None
 
 
+class StrategicScenario(BaseModel):
+    name: str
+    strategy: str
+    kpi_effect: str
+    main_risk: str
+    recommendation: str
+
+
+class RolePriority(BaseModel):
+    role: str
+    immediate: list[str] = []
+    mid_term: list[str] = []
+    long_term: list[str] = []
+
+
 class RecommendationsResponse(BaseModel):
     generated_at: str
     recommendations: list[RecommendationItem]
     quick_wins: list[str]
     strategic: list[str]
+    opportunities: list[str] = []
+    risks: list[str] = []
+    scenarios: list[StrategicScenario] = []
+    role_priorities: list[RolePriority] = []
     source: str
     processing_ms: float
 
@@ -205,6 +232,7 @@ class ChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] = Field(default_factory=list)
     force_fallback: bool = False
+    profile_id: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -212,6 +240,35 @@ class ChatResponse(BaseModel):
     data_used: list[str]
     source: str
     processing_ms: float
+
+
+def _chat_role_prompt(profile_id: Optional[str]) -> str:
+    profile = str(profile_id or "management_ceo").lower()
+    if profile in {"marketing_team", "content_team"}:
+        return """Du agierst als AI-CMO innerhalb einer CEO- und Management-App.
+
+DEIN AUFTRAG:
+- Analysiere Marketing-Kampagnen, Kanaele, Inhalte und Budget-Allokation.
+- Erkenne Trends, Chancen, Schwaechen und Leistungsschwankungen frueh.
+- Priorisiere Massnahmen nach Wirkung, ROI, strategischem Fit und Ressourcenbedarf.
+- Plane Content, Kampagnen und Stories immer mit klaren KPIs wie Traffic, Leads, Conversion, Engagement oder Reichweite.
+- Empfehle A/B-Tests, Budget-Shifts, Timing-Anpassungen und Content-Optimierungen, wenn sie den groessten Hebel versprechen.
+- Formuliere Reports so, dass CEO und COO Fortschritt, Chancen und Risiken sofort verstehen.
+
+ANTWORTSTIL:
+- Antworte wie ein Chief Marketing Officer: strategisch, klar priorisiert und direkt umsetzbar.
+- Verknuepfe jede Empfehlung mit dem betroffenen Kanal, KPI-Ziel und naechsten Test.
+- Erklaere Schwankungen moeglichst mit Ursache -> Wirkung -> Massnahme.
+- Wenn Daten fehlen, benenne sauber, welche Marketingdaten fuer eine bessere Entscheidung fehlen."""
+    return """Du bist Intlyst — ein proaktiver AI-CEO und persoenlicher Business Analyst.
+
+VERHALTEN:
+- Beantworte die Frage direkt und datenbasiert.
+- Gib automatisch verwandten Kontext mit (z.B. bei Umsatz-Frage: auch Trend + Ursache + WoW-Vergleich).
+- Nenne konkrete Zahlen in EUR und Prozent wo immer moeglich.
+- Erklaere Kausalketten: nicht nur WAS, sondern WARUM.
+- Priorisiere Massnahmen wie ein Unternehmensberater: zuerst kritisch, dann mittel- und langfristig.
+- Ordne jede Empfehlung an Unternehmensziele wie Wachstum, Profitabilitaet, Effizienz oder Risikoreduktion an."""
 
 
 class ForecastPoint(BaseModel):
@@ -580,6 +637,26 @@ def _safe_recommendations(items: list[dict]) -> list[RecommendationItem]:
     return safe
 
 
+def _safe_scenarios(items: list[dict]) -> list[StrategicScenario]:
+    safe: list[StrategicScenario] = []
+    for item in items:
+        try:
+            safe.append(StrategicScenario(**item))
+        except Exception:
+            continue
+    return safe
+
+
+def _safe_role_priorities(items: list[dict]) -> list[RolePriority]:
+    safe: list[RolePriority] = []
+    for item in items:
+        try:
+            safe.append(RolePriority(**item))
+        except Exception:
+            continue
+    return safe
+
+
 def _safe_actions(items: list[dict]) -> List[OptimizedAction]:
     safe: List[OptimizedAction] = []
     for item in items:
@@ -731,6 +808,8 @@ def _local_analysis_fallback(source_data: dict, processing_ms: float) -> Analysi
             "action": "Top-Kanaele mit positivem Beitrag priorisieren und taeglich monitoren.",
             "impact": "high",
             "impact_pct": 12.0,
+            "kpi_link": "KPI-Bezug: Umsatzentwicklung, Wochenvergleich und 7-Tage-Momentum.",
+            "strategic_context": "Das Signal entscheidet direkt ueber kurzfristige Liquiditaet und den Spielraum fuer Wachstum.",
             "confidence": 78,
         },
         {
@@ -742,6 +821,8 @@ def _local_analysis_fallback(source_data: dict, processing_ms: float) -> Analysi
             "action": "Landing- und Checkout-Schritte mit den meisten Abbruechen zuerst optimieren.",
             "impact": "medium",
             "impact_pct": 8.0,
+            "kpi_link": "KPI-Bezug: Conversion Rate, Umsatz pro Visit und Funnel-Effizienz.",
+            "strategic_context": "Verbessert die Profitabilitaet des bestehenden Traffics ohne sofort mehr Marketingbudget zu benoetigen.",
             "segment": "funnel",
             "confidence": 74,
         },
@@ -752,6 +833,7 @@ def _local_analysis_fallback(source_data: dict, processing_ms: float) -> Analysi
         generated_at=datetime.utcnow().isoformat(),
         data_period=source_data.get("period", ""),
         summary="Lokale Fallback-Analyse aktiv: Kernsignale aus Umsatz, Conversion und Wochenvergleich wurden datenbasiert ausgewertet.",
+        ceo_summary="CEO-Fokus: Umsatztrend absichern, Conversion-Hebel im Kernfunnel priorisieren und KPI-Abweichungen frueher eskalieren.",
         health_score=health,
         health_label=health_label,
         insights=insights,
@@ -784,6 +866,11 @@ def _local_recommendations_fallback(processing_ms: float, source_data: dict) -> 
             "category": "sales",
             "timeframe": "this_week",
             "action_label": "Kanaele priorisieren",
+            "owner_role": "CEO",
+            "kpi_link": "KPI-Bezug: Umsatz, Wochenvergleich und Umsatz-Momentum.",
+            "priority_reason": "Hohe Prioritaet, weil die Massnahme direkt auf Umsatz und Budgeteffizienz einzahlt.",
+            "strategic_context": "Sichert kurzfristig Ertrag und schafft die Basis fuer gezieltere Wachstumsinvestitionen.",
+            "risk_level": "medium",
         },
         {
             "id": "optimize-funnel",
@@ -797,6 +884,11 @@ def _local_recommendations_fallback(processing_ms: float, source_data: dict) -> 
             "category": "product",
             "timeframe": "this_month",
             "action_label": "Funnel verbessern",
+            "owner_role": "COO",
+            "kpi_link": "KPI-Bezug: Conversion Rate und Umsatz pro Visit.",
+            "priority_reason": "Mittlere Prioritaet, weil der Hebel gross ist, aber Produkt- und Umsetzungszeit benoetigt.",
+            "strategic_context": "Ein struktureller Hebel, der denselben Traffic profitabler macht und Skalierung erleichtert.",
+            "risk_level": "medium",
         },
         {
             "id": "kpi-guardrails",
@@ -810,6 +902,11 @@ def _local_recommendations_fallback(processing_ms: float, source_data: dict) -> 
             "category": "operations",
             "timeframe": "immediate",
             "action_label": "Grenzwerte setzen",
+            "owner_role": "CFO",
+            "kpi_link": "KPI-Bezug: Umsatz, Conversion und Wochentagsleistung.",
+            "priority_reason": "Sofort relevant, weil KPI-Brueche frueher erkannt und schneller gegengesteuert werden koennen.",
+            "strategic_context": "Staerkt das Management-System und reduziert operative Blindspots bei weiterem Wachstum.",
+            "risk_level": "low",
         },
     ]
     recs = [RecommendationItem(**score_recommendation_quality(item, source_data)) for item in fallback_recommendations]
@@ -823,6 +920,65 @@ def _local_recommendations_fallback(processing_ms: float, source_data: dict) -> 
         strategic=[
             "Woechentlichen Performance-Review mit festen KPI-Schwellen etablieren.",
             "Experiment-Backlog fuer Conversion-Hebel mit Impact-Schaetzung aufbauen.",
+        ],
+        opportunities=[
+            "Wachstumschance: Gewinnerkanaele mit positivem 7-Tage-Momentum fokussieren und Budget umschichten.",
+            "Effizienzchance: Conversion-Verbesserung im Kernfunnel hebt Umsatz pro Visit ohne Zusatztraffic.",
+            "Steuerungschance: KPI-Guardrails reduzieren Reaktionszeit bei negativen Abweichungen deutlich.",
+        ],
+        risks=[
+            "Umsatzrisiko: Schwankender Wochenvergleich kann bei breiter Budgetverteilung Momentum kosten.",
+            "Umsetzungsrisiko: Funnel-Probleme bleiben teuer, wenn hohes Traffic-Volumen auf schwache Schritte trifft.",
+            "Steuerungsrisiko: Ohne feste Grenzwerte werden KPI-Brueche zu spaet eskaliert.",
+        ],
+        scenarios=[
+            StrategicScenario(
+                name="Basis",
+                strategy="Top-Umsatzquellen stabilisieren und bestehende Nachfrage effizienter nutzen.",
+                kpi_effect="Moderates Plus bei Umsatz und Umsatz pro Visit bei begrenztem Ressourceneinsatz.",
+                main_risk="Verbesserungen bleiben inkrementell, wenn strukturelle Funnel-Huerden nicht geloest werden.",
+                recommendation="Als Standardpfad sofort starten, wenn das Ziel stabile kurzfristige Performance ist.",
+            ),
+            StrategicScenario(
+                name="Offensiv",
+                strategy="Budget auf Gewinnerkanaele erhoehen und parallel den Kernfunnel aktiv optimieren.",
+                kpi_effect="Hoeheres Umsatz- und Conversion-Potenzial, aber mehr operative Last und hoeherer Fehlerrisiko.",
+                main_risk="Mehr Spend ohne schnelle Funnel-Anpassung kann Effizienz verwässern.",
+                recommendation="Waehlen, wenn Teamkapazitaet fuer Tests, Umsetzung und taegliches Controlling vorhanden ist.",
+            ),
+            StrategicScenario(
+                name="Defensiv",
+                strategy="Guardrails, Monitoring und Kostenkontrolle vor aggressivem Wachstum priorisieren.",
+                kpi_effect="Stabilere Marge und fruehere Risikoerkennung, aber geringeres kurzfristiges Umsatzwachstum.",
+                main_risk="Marktchancen werden langsamer genutzt als bei offensiverer Strategie.",
+                recommendation="Sinnvoll, wenn Cash-Schutz und Risikoreduktion aktuell wichtiger als Tempo sind.",
+            ),
+        ],
+        role_priorities=[
+            RolePriority(
+                role="CEO",
+                immediate=["Budget auf die profitabelsten Umsatzquellen konzentrieren."],
+                mid_term=["Entscheiden, ob Basis- oder Offensiv-Szenario verfolgt wird."],
+                long_term=["Wachstumshebel nach Beitrag zu Umsatz und Profitabilitaet neu priorisieren."],
+            ),
+            RolePriority(
+                role="COO",
+                immediate=["Top-2 Funnel-Reibungspunkte mit hoechstem Volumen identifizieren."],
+                mid_term=["Umsetzungsplan fuer Conversion-Verbesserungen und Verantwortlichkeiten festziehen."],
+                long_term=["Operative Standards fuer schnellere Funnel-Iteration etablieren."],
+            ),
+            RolePriority(
+                role="CMO",
+                immediate=["Traffic-Quellen nach Conversion und Umsatzbeitrag neu ranken."],
+                mid_term=["Kampagnenbudget auf Kanaele mit starkem Momentum verlagern."],
+                long_term=["Systematischen Testplan fuer Nachfrage- und Kanalqualitaet aufbauen."],
+            ),
+            RolePriority(
+                role="CFO",
+                immediate=["Grenzwerte fuer Umsatz-, Conversion- und Effizienzabweichungen definieren."],
+                mid_term=["Woechentliche Guardrail-Reviews mit Management etablieren."],
+                long_term=["Fruehwarnsystem fuer Rendite- und Margenrisiken institutionalisieren."],
+            ),
         ],
         source="fallback",
         processing_ms=processing_ms,
@@ -1012,6 +1168,7 @@ Deine Methodik: MECE-Strukturierung + Chain-of-Thought Reasoning (Signal → Urs
 Du identifizierst nicht nur was passiert, sondern WARUM — und welche EINE Massnahme den groessten Unterschied macht.
 Du kalibrierst Konfidenz strikt: confidence >75 nur fuer Signale mit mindestens 2 konsistenten Datenpunkten.
 Du benennst explizit was die Zahlen NICHT erklaeren (Negative Space) — das ist genauso wertvoll.
+Du formulierst CEO-tauglich: praxisnah, klar priorisiert, ohne Floskeln und immer mit direktem KPI- und Zielbezug.
 Gib ausschliesslich valides JSON ohne Zusatztext aus."""
 
     prompt = f"""Analysiere die folgenden Geschaeftsdaten mit McKinsey-Methodik:
@@ -1021,6 +1178,7 @@ Gib ausschliesslich valides JSON ohne Zusatztext aus."""
 Antworte AUSSCHLIESSLICH als JSON in diesem Schema:
 {{
   "summary": "3-4 Saetze: Kernsituation + Kausalkette + Prioritaet — mit konkreten Zahlen",
+  "ceo_summary": "1-2 Saetze fuer die Geschaeftsfuehrung: was passiert, warum es zaehlt und was jetzt zu tun ist",
   "health_score": 0,
   "health_label": "Sehr gut|Gut|Mittel|Schwach|Kritisch",
   "top_action": "Eine priorisierte Massnahme mit erwarteter Euro-Wirkung",
@@ -1035,6 +1193,8 @@ Antworte AUSSCHLIESSLICH als JSON in diesem Schema:
       "action": "Sofortmassnahme mit messbarem Ziel",
       "impact": "high|medium|low",
       "impact_pct": 0,
+      "kpi_link": "Welcher KPI oder welches Unternehmensziel betroffen ist",
+      "strategic_context": "Einordnung fuer Wachstum, Profitabilitaet oder Marktrisiko",
       "segment": null,
       "confidence": 0
     }}
@@ -1048,6 +1208,7 @@ Regeln:
 - Einen "contrarian" Insight hinzufuegen: Was widerspricht den ersten Erwartungen oder laeuft gegen den Haupttrend?
 - Bevorzuge abgeleitete Kennzahlen: Umsatz/Visit, AOV, Neukunden/Conversion, 7-Tage-Momentum, Wochentagsmuster.
 - Jedes Insight: evidence mit Zahl, confidence 0-100, impact_pct > 0.
+- Jedes Insight braucht KPI-Bezug und strategische Einordnung in klarem CEO-Deutsch.
 - confidence >75 = starkes Signal (mehrere Datenpunkte konsistent); 50-75 = mittel; <50 = schwach.
 - Sortiere Insights nach impact_pct absteigend."""
 
@@ -1078,6 +1239,7 @@ Regeln:
             generated_at=datetime.utcnow().isoformat(),
             data_period=source_data.get("period", ""),
             summary=str(parsed.get("summary", "")),
+            ceo_summary=str(parsed.get("ceo_summary", "")),
             health_score=max(0, min(100, int(parsed.get("health_score", 50)))),
             health_label=str(parsed.get("health_label", "Neutral")),
             insights=insights,
@@ -1113,6 +1275,10 @@ async def get_recommendations(days: int = 30, force_fallback: bool = Query(defau
             recommendations=[],
             quick_wins=["Zuerst Datenbasis aufbauen (mindestens 7 Tage)."],
             strategic=["Tracking fuer Umsatz, Traffic und Conversion vervollstaendigen."],
+            opportunities=[],
+            risks=[],
+            scenarios=[],
+            role_priorities=[],
             source="local",
             processing_ms=ms,
         )
@@ -1126,11 +1292,22 @@ async def get_recommendations(days: int = 30, force_fallback: bool = Query(defau
 
     # Schichten 1–3: Angereicherter Kontext
     context = await build_enriched_context(db, source_data, days)
-    system = """Du bist ein McKinsey Growth Partner der Massnahmen nach ICE-Framework priorisiert.
-ICE = Impact × Confidence × Ease (je 1-10, Gesamtscore max 1000).
-Impact: geschaetzter Umsatz-/Conversion-Effekt. Confidence: Staerke der Evidenz. Ease: Umsetzbarkeit in Stunden/Tagen.
-Empfehlungen muessen quantitativ begruendet sein — kein Rationale ohne konkrete Zahl aus den Daten.
-Gib nur valides JSON ohne Zusatztext aus."""
+    system = """Du bist die AI-Strategist-Rolle innerhalb einer CEO- und Management-App.
+Du arbeitest wie ein echter Strategieberater fuer CEO, COO, CMO und CFO.
+
+DEINE AUFGABEN:
+1. Chancenanalyse: identifiziere Markt-, Wachstums- und Effizienzchancen.
+2. Risikomanagement: erkenne Umsatz-, Markt- und Umsetzungsrisiken fruehzeitig.
+3. Strategische Szenarien: simuliere realistische Handlungsoptionen und ihre KPI-Folgen.
+4. Priorisierung: leite klare Prioritaeten fuer CEO, COO, CMO und CFO ab.
+5. Strategische Kommunikation: formuliere klar, praxisnah, entscheidungsreif.
+
+METHODIK:
+- Priorisiere Massnahmen nach ICE-Framework: Impact × Confidence × Ease (je 1-10, Gesamtscore max 1000).
+- Begruende jede Empfehlung quantitativ mit Zahlen aus den Daten.
+- Verknuepfe jede Empfehlung mit KPIs, operativen Zielen und einer verantwortlichen Management-Rolle.
+- Formuliere praezise, ohne Floskeln, in klarem CEO-Deutsch.
+- Gib nur valides JSON ohne Zusatztext aus."""
 
     prompt = f"""Erstelle ICE-priorisierte Handlungsempfehlungen aus diesen Daten:
 
@@ -1151,6 +1328,11 @@ Antwort nur als JSON:
       "category": "marketing|product|sales|operations|finance",
       "timeframe": "immediate|this_week|this_month|this_quarter",
       "action_label": "max 4 Woerter",
+      "owner_role": "CEO|COO|CMO|CFO|Strategist",
+      "kpi_link": "Welcher KPI oder welches Ziel direkt beeinflusst wird",
+      "priority_reason": "Warum jetzt und warum vor anderen Massnahmen",
+      "strategic_context": "Kurzfristige und strategische Einordnung fuer das Unternehmen",
+      "risk_level": "low|medium|high",
       "ice_impact": 0,
       "ice_confidence": 0,
       "ice_ease": 0,
@@ -1158,18 +1340,43 @@ Antwort nur als JSON:
     }}
   ],
   "quick_wins": ["..."],
-  "strategic": ["..."]
+  "strategic": ["..."],
+  "opportunities": ["..."],
+  "risks": ["..."],
+  "scenarios": [
+    {{
+      "name": "Basis|Offensiv|Defensiv",
+      "strategy": "Welche Strategie simuliert wird",
+      "kpi_effect": "Erwartete KPI-Folge fuer Umsatz, Conversion, Effizienz oder Cash",
+      "main_risk": "Hauptrisiko dieses Szenarios",
+      "recommendation": "Klare Management-Empfehlung"
+    }}
+  ],
+  "role_priorities": [
+    {{
+      "role": "CEO|COO|CMO|CFO",
+      "immediate": ["1-2 konkrete Sofortmassnahmen"],
+      "mid_term": ["1-2 mittelfristige Hebel"],
+      "long_term": ["1-2 langfristige strategische Schritte"]
+    }}
+  ]
 }}
 
 Regeln:
 - 3-5 recommendations, sortiert nach ice_score absteigend.
 - ice_score = ice_impact × ice_confidence × ice_ease (jedes 1-10).
 - Jedes rationale: mindestens eine Zahl (EUR, %, Trend).
+- Jede Empfehlung braucht KPI-Bezug, Priorisierungsgrund und strategischen Kontext.
+- Jede Empfehlung braucht eine klare owner_role fuer das Management.
 - Timeframe-Pflicht: mind. 1x 'immediate', mind. 1x 'this_week'.
 - Mindestens 1 Umsatzhebel, mindestens 1 Effizienz-/Funnel-Hebel.
 - Bevorzuge: Umsatz/Visit, AOV, Zielabweichung, 7-Tage-Momentum, Wochentagsmuster.
 - quick_wins: 2-3 Punkte, heute umsetzbar.
-- strategic: 2-3 Punkte, mittel- bis langfristig."""
+- strategic: 2-3 Punkte, mittel- bis langfristig.
+- opportunities: 3 priorisierte Chancen nach Potenzial, Risiko und Ressourcenbedarf.
+- risks: 3 priorisierte Risiken mit Management-Relevanz.
+- scenarios: genau 3 Szenarien: Basis, Offensiv, Defensiv.
+- role_priorities: genau 4 Eintraege fuer CEO, COO, CMO, CFO."""
 
     if force_fallback:
         ms = _record_metric("recommendations", started, "fallback", True)
@@ -1195,6 +1402,10 @@ Regeln:
             recommendations=recs,
             quick_wins=[str(x) for x in parsed.get("quick_wins", [])][:3],
             strategic=[str(x) for x in parsed.get("strategic", [])][:3],
+            opportunities=[str(x) for x in parsed.get("opportunities", [])][:3],
+            risks=[str(x) for x in parsed.get("risks", [])][:3],
+            scenarios=_safe_scenarios([item for item in parsed.get("scenarios", [])[:3] if isinstance(item, dict)]),
+            role_priorities=_safe_role_priorities([item for item in parsed.get("role_priorities", [])[:4] if isinstance(item, dict)]),
             source="claude",
             processing_ms=ms,
         )
@@ -1217,14 +1428,7 @@ async def chat(body: ChatRequest, db: Session = Depends(get_db), current_user: U
         ms = _record_metric("chat", started, "fallback", True)
         return _local_chat_fallback(body.message, source_data, ms)
 
-    system = f"""Du bist Intlyst — ein proaktiver persoenlicher Business Analyst.
-Du hast Zugriff auf Geschaeftsdaten ueber 7, 30 und 90 Tage.
-
-VERHALTEN:
-- Beantworte die Frage direkt und datenbasiert.
-- Gib automatisch verwandten Kontext mit (z.B. bei Umsatz-Frage: auch Trend + Ursache + WoW-Vergleich).
-- Nenne konkrete Zahlen in EUR und Prozent wo immer moeglich.
-- Erklaere Kausalketten: nicht nur WAS, sondern WARUM.
+    system = f"""{_chat_role_prompt(body.profile_id)}
 - Schliesse jede Antwort mit einer kurzen Rueckfrage ab, die zur Vertiefung einlaedt.
 - Antworte auf Deutsch, klar und direkt — ohne Floskeln.
 

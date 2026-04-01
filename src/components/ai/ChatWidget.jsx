@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useCompanyProfile } from "../../contexts/CompanyProfileContext";
+import { getDashboardRoleCopy } from "../../config/dashboardRoles";
 
 const MODE_CONFIG = {
   explain:  { color: "#06b6d4", label: "Erklärung",  icon: "?" },
@@ -131,6 +133,8 @@ function FollowUpChips({ suggestions, onSelect }) {
 }
 
 export default function ChatWidget() {
+  const { profile } = useCompanyProfile();
+  const roleCopy = getDashboardRoleCopy(profile);
   const [open, setOpen]           = useState(false);
   const [messages, setMessages]   = useState([]);
   const [input, setInput]         = useState("");
@@ -178,7 +182,7 @@ export default function ChatWidget() {
       const res = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: msg, history, mode: "auto" }),
+        body: JSON.stringify({ message: msg, history, mode: "auto", profile_id: profile?.id }),
       });
 
       if (!res.ok) throw new Error(`Status ${res.status}`);
@@ -267,11 +271,11 @@ export default function ChatWidget() {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#1d1d1f" }}>
-                  INTLYST KI
+                  {roleCopy.assistantName}
                 </div>
                 <div style={{ fontSize: 10, color: "#10b981", display: "flex", alignItems: "center", gap: 4 }}>
                   <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#10b981", display: "inline-block" }} />
-                  Online · analysiert deine Daten
+                  Online · {roleCopy.connectedLabel}
                 </div>
               </div>
               <button
@@ -314,8 +318,8 @@ export default function ChatWidget() {
                     padding: "12px 14px", marginBottom: 14,
                     fontSize: 13, color: "#94a3b8", lineHeight: 1.65,
                   }}>
-                    Hallo! Ich bin dein KI-Business-Analyst. Ich habe Zugriff auf deine aktuellen KPIs, Ziele und Anomalien.
-                    Frag mich was du wissen möchtest.
+                    Hallo! Ich bin {roleCopy.assistantName}. Ich habe Zugriff auf deine aktuellen KPIs, Ziele und Anomalien.
+                    Frag mich, was du als Nächstes priorisieren, analysieren oder optimieren solltest.
                   </div>
 
                   <div style={{ fontSize: 10, fontWeight: 700, color: "#334155", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
@@ -393,7 +397,7 @@ export default function ChatWidget() {
                   e.target.style.height = Math.min(e.target.scrollHeight, 100) + "px";
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder="Frage stellen… (Enter zum Senden)"
+                placeholder={`${roleCopy.placeholder} (Enter zum Senden)`}
                 rows={1}
                 style={{
                   flex: 1,

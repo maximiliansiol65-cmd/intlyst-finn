@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { useCompanyProfile } from "../contexts/CompanyProfileContext";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -32,6 +33,19 @@ const COLUMN_META = {
 };
 
 const COLUMNS = ["open", "in_progress", "done"];
+
+const ROLE_RULES = [
+  { label: "CMO", match: ["marketing", "growth", "campaign", "content", "performance"] },
+  { label: "CFO", match: ["finance", "finanzen", "cfo", "budget", "cash", "profit"] },
+  { label: "Strategist", match: ["strategie", "strateg", "market", "analyse", "research"] },
+  { label: "Assistant", match: ["assistant", "assist", "support", "ops", "admin", "office"] },
+];
+
+function inferRole(task) {
+  const haystack = `${task?.assigned_to || ""} ${task?.title || ""} ${task?.description || ""} ${task?.goal || ""}`.toLowerCase();
+  const matched = ROLE_RULES.find((rule) => rule.match.some((token) => haystack.includes(token)));
+  return matched?.label || "Assistant";
+}
 
 // ── SkeletonCard ──────────────────────────────────────────────────────────────
 
@@ -417,13 +431,14 @@ function KanbanColumn({
 
 export default function Tasks() {
   const { authHeader } = useAuth();
+  const { profile } = useCompanyProfile();
 
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [priorityFeed, setPriorityFeed] = useState(null);
   const [priorityLoading, setPriorityLoading] = useState(false);
-  const [ceoOnly, setCeoOnly] = useState(false);
+  const [focusOnly, setFocusOnly] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [advancingId, setAdvancingId] = useState(null);
@@ -466,8 +481,8 @@ export default function Tasks() {
 
   // ── Derived Stats ─────────────────────────────────────────────────────────
 
-  const ceoFocusIds = (priorityFeed?.ceo_focus || []).map((t) => t.id);
-  const tasksForView = ceoOnly && ceoFocusIds.length ? tasks.filter((t) => ceoFocusIds.includes(t.id)) : tasks;
+  const focusIds = (priorityFeed?.ceo_focus || []).map((t) => t.id);
+  const tasksForView = focusOnly && focusIds.length ? tasks.filter((t) => focusIds.includes(t.id)) : tasks;
   const priorityLookup = new Map((priorityFeed?.all || []).map((t) => [t.id, t]));
   const tasksAugmented = tasksForView.map((t) => (priorityLookup.get(t.id) ? { ...t, ...priorityLookup.get(t.id) } : t));
 
@@ -476,6 +491,13 @@ export default function Tasks() {
   const inProgCount    = tasksAugmented.filter((t) => t.status === "in_progress").length;
   const doneCount      = tasksAugmented.filter((t) => t.status === "done").length;
   const completionRate = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+  const overdueCount   = tasksAugmented.filter((t) => isOverdue(t.due_date) && t.status !== "done").length;
+  const unassignedCount = tasksAugmented.filter((t) => t.status !== "done" && !t.assigned_to).length;
+  const unlinkedCount = tasksAugmented.filter((t) => t.status !== "done" && !(t.goal || t.expected_result || (t.kpis && t.kpis.length))).length;
+  const roleCoverage = ROLE_RULES.map((rule) => ({
+    role: rule.label,
+    count: tasksAugmented.filter((task) => task.status !== "done" && inferRole(task) === rule.label).length,
+  }));
 
   const byStatus = (status) => tasksAugmented.filter((t) => t.status === status);
 
@@ -518,6 +540,15 @@ export default function Tasks() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleCreateSuggestedTask(item) {
+    handleCreate({
+      title: item.title,
+      priority: item.priority || "medium",
+      assigned_to: item.assigned_to || "",
+      due_date: "",
+    });
   }
 
   // ── Advance Status ────────────────────────────────────────────────────────
@@ -632,7 +663,10 @@ export default function Tasks() {
         }}
       >
         <div>
-          <h1 className="text-title">Tasks</h1>
+          <h1 className="text-title">{profile.tasks.title}</h1>
+          <p style={{ margin: "8px 0 0", color: "var(--c-text-3)", fontSize: "var(--text-sm)" }}>
+            {profile.tasks.description}
+          </p>
 
           {/* Stats Strip */}
           <div
@@ -691,8 +725,62 @@ export default function Tasks() {
           className="btn btn-primary"
           onClick={() => setShowForm((v) => !v)}
         >
-          {showForm ? "× Schließen" : "+ Neuer Task"}
+          {showForm ? "× Schließen" : "+ Aufgabe verteilen"}
         </button>
+      </div>
+
+      <div
+        className="card"
+        style={{
+          padding: "var(--s-4)",
+          marginBottom: "var(--s-5)",
+          border: "1px solid var(--c-border)",
+          background: "linear-gradient(180deg, var(--c-surface) 0%, var(--c-surface-2) 100%)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: "var(--s-3)", alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: "var(--text-lg)" }}>Aufgabenkontrolle</div>
+            <div style={{ color: "var(--c-text-3)", fontSize: "var(--text-sm)" }}>
+              Prüft operative Engpässe, Rollenverteilung und KPI-Verknüpfung aller offenen Aufgaben.
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
+            <span className={`badge badge-sm ${overdueCount > 0 ? "badge-danger" : "badge-success"}`}>Überfällig {overdueCount}</span>
+            <span className={`badge badge-sm ${unassignedCount > 0 ? "badge-warning" : "badge-neutral"}`}>Ohne Owner {unassignedCount}</span>
+            <span className={`badge badge-sm ${unlinkedCount > 0 ? "badge-warning" : "badge-neutral"}`}>Ohne KPI {unlinkedCount}</span>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "var(--s-3)", marginTop: "var(--s-3)" }}>
+          <div style={{ padding: "var(--s-3)", borderRadius: "var(--r-md)", border: "1px solid var(--c-border)", background: "var(--c-surface)" }}>
+            <div className="label" style={{ marginBottom: 8 }}>Kritische Hinweise</div>
+            <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text)", lineHeight: 1.7 }}>
+              {overdueCount > 0 ? `${overdueCount} Aufgaben sind überfällig und sollten zuerst eskaliert oder neu terminiert werden.` : "Aktuell keine überfälligen Aufgaben."}
+            </div>
+            <div style={{ fontSize: "var(--text-xs)", color: "var(--c-text-3)", marginTop: 8 }}>
+              {unassignedCount > 0 ? `${unassignedCount} Aufgaben brauchen sofort eine klare Zuständigkeit.` : "Zuständigkeiten sind aktuell weitgehend sauber verteilt."}
+            </div>
+          </div>
+          <div style={{ padding: "var(--s-3)", borderRadius: "var(--r-md)", border: "1px solid var(--c-border)", background: "var(--c-surface)" }}>
+            <div className="label" style={{ marginBottom: 8 }}>Teamrollen</div>
+            <div style={{ display: "grid", gap: 4 }}>
+              {roleCoverage.map((item) => (
+                <div key={item.role} style={{ fontSize: "var(--text-sm)", color: "var(--c-text)" }}>
+                  {item.role}: {item.count} offene Aufgaben
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{ padding: "var(--s-3)", borderRadius: "var(--r-md)", border: "1px solid var(--c-border)", background: "var(--c-surface)" }}>
+            <div className="label" style={{ marginBottom: 8 }}>Strategische Verknüpfung</div>
+            <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text)", lineHeight: 1.7 }}>
+              {unlinkedCount > 0
+                ? `${unlinkedCount} offene Aufgaben sind nicht klar mit KPI oder Ziel verknüpft. Diese Aufgaben sollten präzisiert oder zurückgestellt werden.`
+                : "Alle offenen Aufgaben haben eine erkennbare Verbindung zu Ziel oder Ergebnis."}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* ── CEO-Prioritäten ── */}
@@ -707,17 +795,35 @@ export default function Tasks() {
       >
         <div style={{ display: "flex", justifyContent: "space-between", gap: "var(--s-3)", alignItems: "flex-start", flexWrap: "wrap" }}>
           <div>
-            <div style={{ fontWeight: 700, fontSize: "var(--text-lg)" }}>Nur die wichtigsten Aufgaben</div>
+            <div style={{ fontWeight: 700, fontSize: "var(--text-lg)" }}>{profile.shortLabel}-Fokus</div>
             <div style={{ color: "var(--c-text-3)", fontSize: "var(--text-sm)" }}>
-              Automatisch priorisiert nach Umsatz-, Traffic- und Growth-Impact. Heute & diese Woche im Fokus.
+              Automatisch priorisiert nach Geschäftsimpact und passend für diese Unternehmensversion.
             </div>
           </div>
           <button
-            className={`btn ${ceoOnly ? "btn-secondary" : "btn-primary"}`}
-            onClick={() => setCeoOnly((v) => !v)}
+            className={`btn ${focusOnly ? "btn-secondary" : "btn-primary"}`}
+            onClick={() => setFocusOnly((v) => !v)}
           >
-            {ceoOnly ? "Alle anzeigen" : "Nur wichtigste Aufgaben anzeigen"}
+            {focusOnly ? profile.tasks.resetLabel : profile.tasks.focusLabel}
           </button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "var(--s-3)", marginTop: "var(--s-3)" }}>
+          {profile.tasks.suggestions.map((item) => (
+            <div key={item.title} style={{ border: "1px solid var(--c-border)", borderRadius: "var(--r-md)", padding: "var(--s-3)", background: "var(--c-surface)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s-3)" }}>
+                <div>
+                  <div style={{ fontWeight: 700 }}>{item.title}</div>
+                  <div style={{ color: "var(--c-text-3)", fontSize: "var(--text-xs)", marginTop: 6 }}>
+                    {item.assigned_to || "Team"} · {item.priority === "high" ? "Hohe Priorität" : "Mittlere Priorität"}
+                  </div>
+                </div>
+                <button className="btn btn-secondary btn-sm" onClick={() => handleCreateSuggestedTask(item)}>
+                  Erstellen
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "var(--s-3)", marginTop: "var(--s-3)" }}>
@@ -758,7 +864,7 @@ export default function Tasks() {
             );
           })}
           <div style={{ border: "1px solid var(--c-border)", borderRadius: "var(--r-md)", padding: "var(--s-3)", background: "var(--c-surface-2)" }}>
-            <div style={{ fontWeight: 700, marginBottom: "var(--s-2)" }}>CEO-Fokus</div>
+            <div style={{ fontWeight: 700, marginBottom: "var(--s-2)" }}>{profile.shortLabel}-Fokus</div>
             {priorityFeed?.ceo_focus?.length ? (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {priorityFeed.ceo_focus.map((item) => (

@@ -43,3 +43,23 @@ export default {
   },
 };
 ```
+
+## Quality Scorecard
+
+Die App-Bewertung laeuft jetzt reproduzierbar ueber ein Skript im Backend-Kontext.
+
+```bash
+python scripts/quality_scorecard.py
+```
+
+Optional mit Integrationstests in der Wertung:
+
+```bash
+python scripts/quality_scorecard.py --run-tests
+```
+
+JSON-Ausgabe fuer CI/Reporting:
+
+```bash
+python scripts/quality_scorecard.py --json
+```

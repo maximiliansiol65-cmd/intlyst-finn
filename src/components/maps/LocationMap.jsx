@@ -92,7 +92,7 @@ function CompetitorCard({ c, index }) {
                 color: c.open_now ? "#10b981" : "#ef4444",
               }}
             >
-              {c.open_now ? "Geoeffnet" : "Geschlossen"}
+              {c.open_now ? "Geöffnet" : "Geschlossen"}
             </span>
           )}
         </div>

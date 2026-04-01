@@ -269,16 +269,7 @@ export default function ForecastChart({ metric = "revenue" }) {
               gap: 12,
             }}
           >
-            <div
-              style={{
-                width: 16,
-                height: 16,
-                borderRadius: "50%",
-                border: "2px solid #6366f1",
-                borderTopColor: "transparent",
-                animation: "spin 0.8s linear infinite",
-              }}
-            />
+            <div className="spinner spinner-sm" />
             <span style={{ fontSize: 13, color: "#475569" }}>Claude berechnet Prognose...</span>
           </div>
         )}
@@ -350,7 +341,6 @@ export default function ForecastChart({ metric = "revenue" }) {
         )}
       </div>
 
-      <style>{"@keyframes spin { to { transform: rotate(360deg); } }"}</style>
     </div>
   );
 }

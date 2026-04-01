@@ -1196,6 +1196,146 @@ def _projected_effect(event: DecisionEvent, impact_pct: float) -> dict[str, Any]
     }
 
 
+def _safe_number(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None:
+            return float(default)
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _priority_letter(priority: str) -> str:
+    return {"high": "A", "medium": "B", "low": "C"}.get(priority, "B")
+
+
+def _pretty_role(role: Optional[str]) -> str:
+    mapping = {
+        "owner": "Geschaeftsfuehrung",
+        "admin": "Geschaeftsfuehrung",
+        "manager": "Management",
+        "marketing": "Marketing-Leitung",
+        "sales": "Vertriebsleitung",
+        "operations": "Operative Leitung",
+        "finance": "Finanzleitung",
+    }
+    return mapping.get(str(role or "").lower(), "Management")
+
+
+def _industry_copy(industry: Optional[str]) -> str:
+    key = str(industry or "ecommerce").lower()
+    mapping = {
+        "ecommerce": "im Onlinehandel",
+        "retail": "im Handel",
+        "saas": "im SaaS-Vertrieb",
+        "service": "im Dienstleistungsgeschaeft",
+        "hospitality": "im Gastgewerbe",
+    }
+    return mapping.get(key, f"in der Branche {industry}")
+
+
+def _format_money(value: float) -> str:
+    return f"EUR {value:,.0f}".replace(",", ".")
+
+
+def _segment_blueprints(context: Optional[dict[str, Any]]) -> list[dict[str, Any]]:
+    commerce = (context or {}).get("commerce") or {}
+    top_customers = commerce.get("top_customers") or []
+    has_high_value = len(top_customers) > 0
+    return [
+        {"recipient": "High-LTV Kunden (45-120 Tage inaktiv)" if has_high_value else "Bestandskunden mit hohem Warenkorbwert", "angle": "Reaktivierung", "cta": "Jetzt exklusives Angebot sichern"},
+        {"recipient": "Warenkorbabbrecher der letzten 7 Tage", "angle": "Checkout-Rettung", "cta": "Bestellung jetzt abschliessen"},
+        {"recipient": "Premium-Leads mit hoher Kaufwahrscheinlichkeit", "angle": "Lead-Konvertierung", "cta": "Beratung oder Angebot anfordern"},
+        {"recipient": "Erstkauf-Kunden aus den letzten 30 Tagen", "angle": "Zweitkauf-Beschleunigung", "cta": "Passendes Folgeprodukt ansehen"},
+        {"recipient": "Kunden mit ueberdurchschnittlichem AOV", "angle": "Upsell auf hoeheren Warenkorb", "cta": "Premium-Bundle ansehen"},
+        {"recipient": "Deals oder Anfragen ohne Abschluss in 14 Tagen", "angle": "Abschluss beschleunigen", "cta": "Vorteil jetzt aktivieren"},
+        {"recipient": "VIP-Kunden und Wiederkaeufer", "angle": "Exklusiver Vorabzugang", "cta": "Vorabzugang nutzen"},
+        {"recipient": "Besuchersegment mit hoher Reichweite und niedriger Conversion", "angle": "Conversion-Upgrade", "cta": "Angebot mit klarem Vorteil ansehen"},
+        {"recipient": "Preis-sensitive Leads mit wiederholten Besuchen", "angle": "Wertargument statt Rabattstreuung", "cta": "Angebot mit Nutzen pruefen"},
+        {"recipient": "Newsletter-Abonnenten ohne Klick in 60 Tagen", "angle": "Interesse zurueckholen", "cta": "Relevante Auswahl ansehen"},
+    ]
+
+
+def _email_target_kpi(event: DecisionEvent, priority: str, idx: int) -> str:
+    impact = min(18, max(6, int(abs(event.delta_pct) * 0.8) + (2 if priority == "high" else 0) - idx))
+    mapping = {
+        "revenue": "Umsatz",
+        "conversion_rate": "Conversion",
+        "traffic": "Leads",
+        "new_customers": "Neukunden",
+        "profit": "Deckungsbeitrag",
+    }
+    return f"{mapping.get(event.metric, event.metric_label)} +{max(4, impact)}%"
+
+
+def _email_effect_estimate(event: DecisionEvent, context: Optional[dict[str, Any]], idx: int) -> dict[str, Any]:
+    commerce = (context or {}).get("commerce") or {}
+    aov = max(45.0, _safe_number(commerce.get("avg_order_value"), 95.0))
+    total_revenue = max(2000.0, _safe_number(commerce.get("total_revenue_30d"), event.current_value * 30))
+    revenue_gain = max(600.0, total_revenue * (0.018 + idx * 0.003))
+    leads_gain = max(8, int(revenue_gain / max(40.0, aov * 0.6)))
+    return {
+        "revenue_label": f"+{_format_money(revenue_gain)} Umsatz in 14 Tagen",
+        "lead_label": f"+{leads_gain}% mehr qualifizierte Reaktionen",
+    }
+
+
+def _compose_email_copy(
+    event: DecisionEvent,
+    segment: dict[str, Any],
+    context: Optional[dict[str, Any]],
+    target_kpi: str,
+    effect: dict[str, Any],
+) -> dict[str, Any]:
+    company = (context or {}).get("company_name") or "dein Unternehmen"
+    role = _pretty_role((context or {}).get("company_role"))
+    industry = _industry_copy((context or {}).get("industry"))
+    perf = (context or {}).get("email_performance") or {}
+    open_rate = _safe_number(perf.get("avg_open_rate"), 22.0)
+    click_rate = _safe_number(perf.get("avg_click_rate"), 2.4)
+    intro = (
+        f"Die Auswertung der letzten 30 Tage zeigt bei {event.metric_label.lower()} Handlungsbedarf. "
+        f"Fuer {segment['recipient']} ist jetzt der direkteste Umsatzhebel verfuegbar."
+    )
+    message = (
+        f"Wir sprechen diese Zielgruppe mit einem klaren Anlass an: {segment['angle'].lower()}. "
+        f"Die Botschaft ist auf eine schnelle Reaktion und messbare Conversion ausgelegt."
+    )
+    value = (
+        f"Wenn die E-Mail mindestens die aktuelle Basis von {open_rate:.1f}% Oeffnungsrate und {click_rate:.1f}% Klickrate erreicht, "
+        f"ist kurzfristig {effect['revenue_label']} realistisch."
+    )
+    return {
+        "subject_line": f"{segment['angle']}: konkreter Vorteil fuer {segment['recipient'].split('(')[0].strip()}"[:120],
+        "preheader": f"Fuer {role} bei {company}: Fokus auf {target_kpi}, basierend auf den letzten 30 Tagen {industry}."[:160],
+        "email_text": f"Einleitung: {intro}\nHauptbotschaft: {message}\nNutzenversprechen: {value}\nCTA: {segment['cta']}",
+        "why_this_email": f"Diese E-Mail zahlt direkt auf {target_kpi} ein und adressiert das Segment mit dem schnellsten Umsatzhebel fuer die naechsten 14 Tage.",
+        "next_best_step": "Reminder nach 48 Stunden mit FAQ- oder Vertrauensbaustein; danach Deal-Trigger fuer Nicht-Klicker.",
+    }
+
+
+def _build_email_suggestions(
+    event: DecisionEvent,
+    context: Optional[dict[str, Any]],
+    priority: str,
+) -> list[dict[str, Any]]:
+    suggestions = []
+    for idx, segment in enumerate(_segment_blueprints(context)):
+        bucket = "A" if idx < 3 and priority == "high" else "B" if idx < 7 else "C"
+        target_kpi = _email_target_kpi(event, priority, idx)
+        effect = _email_effect_estimate(event, context, idx)
+        copy = _compose_email_copy(event, segment, context, target_kpi, effect)
+        suggestions.append({
+            "title": f"{segment['angle']} fuer {segment['recipient']}",
+            "priority": bucket,
+            "recipient": segment["recipient"],
+            "target_kpi": target_kpi,
+            "estimated_effect": effect["revenue_label"] if bucket in {"A", "B"} else effect["lead_label"],
+            **copy,
+        })
+    return suggestions
+
+
 def _step_blueprints(metric: str, action_type: str, systems: list[str], is_primary: bool) -> list[dict[str, Any]]:
     steps = [
         {
@@ -1268,6 +1408,8 @@ def build_recommendations(
         trend_signal = _trend_signal(event)
         projected_effect = _projected_effect(event, impact)
         steps = _step_blueprints(event.metric, action_type, execution_plan["systems"], is_primary_one_click)
+        email_suggestions = _build_email_suggestions(event, context, priority)
+        primary_email = email_suggestions[0]
         one_click_payload = {
             "title": f"{event.metric_label} jetzt verbessern",
             "description": f"Auto-Strategie für {event.metric_label.lower()} mit klaren KPI-Zielen.",
@@ -1283,9 +1425,21 @@ def build_recommendations(
         }
         prepared_assets = {
             "email": {
-                "subject": f"{event.metric_label}: Sofortstrategie aktivieren",
-                "preview": f"Wir reagieren auf {event.metric_label.lower()} mit einem fokussierten Maßnahmenpaket.",
+                "title": primary_email["title"],
+                "priority": primary_email["priority"],
+                "recipient": primary_email["recipient"],
+                "target_kpi": primary_email["target_kpi"],
+                "estimated_effect": primary_email["estimated_effect"],
+                "subject": primary_email["subject_line"],
+                "preview": primary_email["preheader"],
+                "preheader": primary_email["preheader"],
+                "body": primary_email["email_text"],
+                "why_this_email": primary_email["why_this_email"],
+                "next_best_step": primary_email["next_best_step"],
+                "persona_role": _pretty_role((context or {}).get("company_role")),
+                "industry": (context or {}).get("industry") or "ecommerce",
             },
+            "email_suggestions": email_suggestions,
             "social_posts": [
                 {"channel": "linkedin", "preview": f"{event.metric_label} aktiv verbessern: jetzt Strategie umsetzen."},
                 {"channel": "instagram", "preview": f"Fokus auf {event.metric_label.lower()} und schnelle Wirkung."},
@@ -1399,6 +1553,7 @@ def build_recommendations(
             "description": f"Reagiere auf {event.metric_label.lower()} mit Fokus auf {lead_cause.lower()}.",
             "category": event.category,
             "priority": priority,
+            "priority_class": _priority_letter(priority),
             "expected_impact_pct": impact,
             "impact_score": min(100, impact * 2.8),
             "risk_score": risk,

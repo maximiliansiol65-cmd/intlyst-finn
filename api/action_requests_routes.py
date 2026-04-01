@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import json
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
@@ -49,6 +49,7 @@ class ActionRequestCreate(BaseModel):
     execution_type: str = "task"
     template_name: Optional[str] = None
     target_systems: Optional[list[str]] = None
+    prepared_assets: Optional[Dict[str, Any]] = None
 
 
 class ApprovalBody(BaseModel):
@@ -80,6 +81,7 @@ class LiveFeedbackBody(BaseModel):
 
 
 def _to_response(item: ActionRequest, policy: Optional[dict] = None) -> dict:
+    execution_plan = json.loads(item.execution_plan_json) if item.execution_plan_json else None
     return {
         "id": item.id,
         "event_id": item.event_id,
@@ -99,7 +101,8 @@ def _to_response(item: ActionRequest, policy: Optional[dict] = None) -> dict:
         "execution_ref": item.execution_ref,
         "execution_summary": item.execution_summary,
         "artifact_payload": json.loads(item.artifact_payload) if item.artifact_payload else None,
-        "execution_plan": json.loads(item.execution_plan_json) if item.execution_plan_json else None,
+        "execution_plan": execution_plan,
+        "prepared_assets": (execution_plan or {}).get("prepared_assets"),
         "target_systems": json.loads(item.target_systems_json) if item.target_systems_json else [],
         "live_feedback": json.loads(item.live_feedback_json) if item.live_feedback_json else None,
         "progress_pct": item.progress_pct,
@@ -127,22 +130,34 @@ def _log_task_history(task_id: int, changed_by: str, db: Session) -> None:
 
 
 def _build_email_draft_html(item: ActionRequest, user: User) -> str:
+    plan = json.loads(item.execution_plan_json) if item.execution_plan_json else {}
+    email = (plan.get("prepared_assets") or {}).get("email") or {}
+    lines = str(email.get("body") or item.description or "").split("\n")
+    paragraphs = "".join(
+        f'<p style="font-size:14px;line-height:1.7;color:#334155;margin:0 0 12px">{line}</p>'
+        for line in lines if line.strip()
+    )
     return f"""
     <div style="font-family:Segoe UI,sans-serif;max-width:640px;margin:0 auto;padding:32px;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px">
-      <div style="font-size:24px;font-weight:800;color:#111827;margin-bottom:16px">INTLYST Action Draft</div>
-      <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:12px">{item.title}</div>
-      <p style="font-size:14px;line-height:1.7;color:#475569;margin:0 0 16px">{item.description or ""}</p>
+      <div style="font-size:24px;font-weight:800;color:#111827;margin-bottom:16px">INTLYST Umsatz-E-Mail-Draft</div>
+      <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:4px">{email.get("title") or item.title}</div>
+      <div style="font-size:13px;color:#64748b;margin-bottom:12px">{email.get("preheader") or ""}</div>
+      {paragraphs}
       <div style="background:#f8fafc;border-radius:12px;padding:16px;margin-bottom:16px">
-        <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.04em">Empfohlen von</div>
-        <div style="font-size:14px;color:#111827;font-weight:600;margin-top:4px">{user.email}</div>
+        <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.04em">KPI-Ziel</div>
+        <div style="font-size:14px;color:#111827;font-weight:600;margin-top:4px">{email.get("target_kpi") or "Umsatzwirkung steigern"}</div>
+        <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-top:12px">Empfaenger</div>
+        <div style="font-size:14px;color:#111827;font-weight:600;margin-top:4px">{email.get("recipient") or "Relevantes Segment"}</div>
       </div>
-      <div style="font-size:13px;color:#64748b">Kategorie: {item.category} · Priorität: {item.priority}</div>
+      <div style="font-size:13px;color:#64748b">Prioritaet: {email.get("priority") or item.priority} · Freigegeben von {user.email}</div>
     </div>
     """.strip()
 
 
 def _build_strategy_bundle(item: ActionRequest, user: User) -> dict:
-    subject = f"{item.title}: Jetzt Momentum in Wachstum umsetzen"
+    plan = json.loads(item.execution_plan_json) if item.execution_plan_json else {}
+    email_asset = (plan.get("prepared_assets") or {}).get("email") or {}
+    subject = email_asset.get("subject") or f"{item.title}: Jetzt Momentum in Wachstum umsetzen"
     email_html = _build_email_draft_html(item, user)
     social_posts = [
         {
@@ -168,7 +183,7 @@ def _build_strategy_bundle(item: ActionRequest, user: User) -> dict:
         {"phase": "Review", "offset_hours": 168, "goal": "Outcome in Learning Loop zurückspielen"},
     ]
     return {
-        "email": {"subject": subject, "html": email_html},
+        "email": {**email_asset, "subject": subject, "html": email_html},
         "social_posts": social_posts,
         "team_tasks": team_tasks,
         "timeline": timeline,
@@ -180,7 +195,12 @@ def _build_strategy_bundle(item: ActionRequest, user: User) -> dict:
     }
 
 
-def _build_execution_plan(execution_type: str, target_systems: Optional[List[str]] = None, template_name: Optional[str] = None) -> dict:
+def _build_execution_plan(
+    execution_type: str,
+    target_systems: Optional[List[str]] = None,
+    template_name: Optional[str] = None,
+    prepared_assets: Optional[Dict[str, Any]] = None,
+) -> dict:
     systems = target_systems or []
     systems = systems or (
         ["intlyst_tasks", "hubspot", "trello", "slack"] if execution_type == "task"
@@ -210,6 +230,7 @@ def _build_execution_plan(execution_type: str, target_systems: Optional[List[str
         ],
         "success_metrics": success_metrics,
         "rollback": "Bei negativem KPI-Signal neue Ausführung stoppen und manuell prüfen.",
+        "prepared_assets": prepared_assets or {},
     }
 
 
@@ -387,8 +408,11 @@ async def _execute_action_request(item: ActionRequest, user: User, db: Session, 
         item.progress_stage = "running"
         item.next_action_text = "Team-Tasks anstoßen, Social-Entwürfe prüfen und erste Wirkungsdaten verfolgen."
     else:
+        plan = json.loads(item.execution_plan_json) if item.execution_plan_json else {}
+        email_asset = (plan.get("prepared_assets") or {}).get("email") or {}
         html = _build_email_draft_html(item, user)
-        mailchimp_result = await create_mailchimp_campaign_draft(db, integration_user.id, item.title, html)
+        subject = email_asset.get("subject") or item.title
+        mailchimp_result = await create_mailchimp_campaign_draft(db, integration_user.id, subject, html)
         slack_result = await post_slack_strategy_message(
             db,
             integration_user.id,
@@ -400,7 +424,8 @@ async def _execute_action_request(item: ActionRequest, user: User, db: Session, 
         item.execution_summary = f"{item.execution_type} vorbereitet"
         item.artifact_payload = json.dumps({
             "type": "email_draft",
-            "subject": item.title,
+            "email": email_asset,
+            "subject": subject,
             "preview_to": user.email,
             "html": html,
             "mailchimp": mailchimp_result,
@@ -556,7 +581,7 @@ def create_action_request(
         execution_type=body.execution_type,
         status="pending_approval",
         requested_by=current_user.email,
-        execution_plan_json=json.dumps(_build_execution_plan(body.execution_type, body.target_systems or [], body.template_name)),
+        execution_plan_json=json.dumps(_build_execution_plan(body.execution_type, body.target_systems or [], body.template_name, body.prepared_assets)),
         target_systems_json=json.dumps(body.target_systems or []),
     )
     db.add(item)

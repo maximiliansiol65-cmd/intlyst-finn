@@ -24,7 +24,7 @@ const INDUSTRIES = [
 ];
 
 const STATUS_CONFIG = {
-  above: { color: "#333333", bg: "#33333312", label: "Ueber O" },
+  above: { color: "#333333", bg: "#33333312", label: "Über O" },
   average: { color: "#888888", bg: "#88888812", label: "Im O" },
   below: { color: "#111111", bg: "#11111112", label: "Unter O" },
 };
@@ -224,7 +224,7 @@ export default function Market() {
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1d1d1f", margin: 0 }}>Markt & Standort</h1>
           <p style={{ fontSize: 13, color: "#6e6e73", margin: "4px 0 0" }}>
-            Branchenvergleich · Google Trends · Saisonalitaet · Standortkarte
+            Branchenvergleich · Google Trends · Saisonalität · Standortkarte
           </p>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -468,7 +468,7 @@ export default function Market() {
 
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#6e6e73", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>
-              Saisonalitaet - Monatsindex fuer {INDUSTRIES.find((i) => i.value === industry)?.label}
+              Saisonalität - Monatsindex für {INDUSTRIES.find((i) => i.value === industry)?.label}
             </div>
             <div style={{ background: "#f5f5f7", border: "1px solid #e8e8ed", borderRadius: 12, padding: "18px" }}>
               <SeasonalityFetcher industry={industry} />

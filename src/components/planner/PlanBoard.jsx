@@ -39,6 +39,11 @@ function PlanCard({ item }) {
         <PriorityBadge value={item.priority} />
       </div>
       <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-3)" }}>{item.reason}</div>
+      {item.owner_role ? (
+        <div style={{ fontSize: "var(--text-xs)", color: "var(--c-text-3)" }}>
+          Owner: <strong style={{ color: "var(--c-text)" }}>{item.owner_role}</strong>
+        </div>
+      ) : null}
       {item.kpis.length > 0 ? (
         <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
           {item.kpis.map((k) => (
@@ -56,6 +61,30 @@ function PlanCard({ item }) {
               {k}
             </span>
           ))}
+        </div>
+      ) : null}
+      {item.strategic_goal ? (
+        <div style={{ fontSize: "var(--text-xs)", color: "var(--c-text-2)", lineHeight: 1.6 }}>
+          Zielbeitrag: {item.strategic_goal}
+        </div>
+      ) : null}
+      {item.linked_to ? (
+        <div style={{ fontSize: "var(--text-xs)", color: "var(--c-text-3)", lineHeight: 1.6 }}>
+          Verknüpft mit: {item.linked_to}
+        </div>
+      ) : null}
+      {item.next_action ? (
+        <div
+          style={{
+            fontSize: "var(--text-xs)",
+            color: "var(--c-text)",
+            background: "var(--c-surface-2)",
+            borderRadius: "var(--r-sm)",
+            padding: "8px 10px",
+            border: "1px solid var(--c-border)",
+          }}
+        >
+          Nächster Schritt: {item.next_action}
         </div>
       ) : null}
     </div>
@@ -90,6 +119,21 @@ export default function PlanBoard({ plan, loading }) {
   return (
     <div className="card" style={{ padding: "var(--s-5)" }}>
       <div style={{ fontWeight: 700, marginBottom: "var(--s-4)" }}>Strategie-Board</div>
+      {!loading && plan?.ceo_summary ? (
+        <div
+          style={{
+            marginBottom: "var(--s-4)",
+            padding: "var(--s-4)",
+            borderRadius: "var(--r-md)",
+            background: "var(--c-surface-2)",
+            border: "1px solid var(--c-border)",
+            color: "var(--c-text)",
+            lineHeight: 1.6,
+          }}
+        >
+          {plan.ceo_summary}
+        </div>
+      ) : null}
       <div
         style={{
           display: "grid",
@@ -112,6 +156,40 @@ export default function PlanBoard({ plan, loading }) {
           </div>
         ))}
       </div>
+      {!loading && (plan?.top_decisions?.length || plan?.risks?.length || plan?.opportunities?.length) ? (
+        <div style={{ marginTop: "var(--s-4)", display: "grid", gap: "var(--s-3)" }}>
+          {plan.top_decisions?.length ? (
+            <div className="card" style={{ padding: "var(--s-4)" }}>
+              <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-text-3)", marginBottom: "var(--s-2)" }}>
+                CEO-Entscheidungen
+              </div>
+              {plan.top_decisions.map((entry, idx) => (
+                <div key={idx} style={{ fontSize: "var(--text-sm)", color: "var(--c-text)", lineHeight: 1.6 }}>{entry}</div>
+              ))}
+            </div>
+          ) : null}
+          {plan.risks?.length ? (
+            <div className="card" style={{ padding: "var(--s-4)" }}>
+              <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-danger)", marginBottom: "var(--s-2)" }}>
+                Risiken
+              </div>
+              {plan.risks.map((entry, idx) => (
+                <div key={idx} style={{ fontSize: "var(--text-sm)", color: "var(--c-text)", lineHeight: 1.6 }}>{entry}</div>
+              ))}
+            </div>
+          ) : null}
+          {plan.opportunities?.length ? (
+            <div className="card" style={{ padding: "var(--s-4)" }}>
+              <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-success)", marginBottom: "var(--s-2)" }}>
+                Chancen
+              </div>
+              {plan.opportunities.map((entry, idx) => (
+                <div key={idx} style={{ fontSize: "var(--text-sm)", color: "var(--c-text)", lineHeight: 1.6 }}>{entry}</div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

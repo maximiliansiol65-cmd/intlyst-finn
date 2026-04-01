@@ -258,16 +258,6 @@ def _ensure_default_workspace_for_user(db: Session, user: User) -> int:
     return workspace.id
 
 
-def get_current_workspace_id(
-    request: Request,
-    current_user: User = Depends(get_current_user),
-) -> int:
-    workspace_id = getattr(request.state, "workspace_id", None) or getattr(current_user, "active_workspace_id", None)
-    if not workspace_id:
-        raise HTTPException(status_code=403, detail="Kein Workspace im Request-Kontext.")
-    return int(workspace_id)
-
-
 def get_current_user(
     request: Request,
     token: str = Depends(oauth2_scheme),
@@ -324,6 +314,16 @@ def get_current_user(
         db.commit()
 
     return user
+
+
+def get_current_workspace_id(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> int:
+    workspace_id = getattr(request.state, "workspace_id", None) or getattr(current_user, "active_workspace_id", None)
+    if not workspace_id:
+        raise HTTPException(status_code=403, detail="Kein Workspace im Request-Kontext.")
+    return int(workspace_id)
 
 
 # ── Endpunkte ─────────────────────────────────────────────────────────────────

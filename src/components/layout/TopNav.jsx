@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
+import { useCompanyProfile } from "../../contexts/CompanyProfileContext";
 
 /* ── Icons ─────────────────────────────────────────────────────────────────── */
 const IcoHome = () => (
@@ -78,20 +79,27 @@ const IcoReport = () => (
   </svg>
 );
 
-// Navigation läuft über BottomTabBar (mobil) bzw. Mehr-Seite
-const NAV_LINKS_BASE = [];
+// Desktop-Navigation folgt den 6 Management-Bereichen
+const NAV_LINKS_BASE = [
+  { to: "/",             labelKey: "Entscheidungen", Icon: IcoHome,   end: true },
+  { to: "/analyse",      labelKey: "Analyse",        Icon: IcoChart },
+  { to: "/command",      labelKey: "Priorisierung",  Icon: IcoFlask },
+  { to: "/ceo",          labelKey: "Beratung",       Icon: IcoRocket },
+  { to: "/tasks",        labelKey: "Aufgaben",       Icon: IcoCheck },
+  { to: "/review-audit", labelKey: "Review",         Icon: IcoReport },
+];
 
 export default function TopNav({ onAiClick }) {
   const { user, authHeader, activeWorkspaceId, setActiveWorkspace } = useAuth();
   const { t } = useLanguage();
+  const { profile } = useCompanyProfile();
   const navigate = useNavigate();
   const [workspaces, setWorkspaces] = useState([]);
   const [alertCount, setAlertCount] = useState(0);
 
-  // Dynamically create NAV_LINKS with translations
   const NAV_LINKS = NAV_LINKS_BASE.map(link => ({
     ...link,
-    label: t(link.labelKey)
+    label: t?.(link.labelKey) || link.labelKey,
   }));
 
   useEffect(() => {
@@ -186,6 +194,21 @@ export default function TopNav({ onAiClick }) {
         )}
 
         {/* AI Button */}
+        <div
+          className="hide-mobile"
+          style={{
+            padding: "5px 10px",
+            borderRadius: "999px",
+            background: "var(--c-surface-3)",
+            border: "1px solid var(--c-border)",
+            fontSize: "var(--text-xs)",
+            color: "var(--c-text-2)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {profile.shortLabel}
+        </div>
+
         <button
           className="topnav-ai-btn"
           onClick={onAiClick}

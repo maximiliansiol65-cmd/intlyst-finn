@@ -352,19 +352,17 @@ h1, h2, h3, h4, h5, h6 {
 /* ── 9. Page Transition ───────────────────────────────────────────────────── */
 .page-enter {
   animation: pageSoftIn var(--dur-ultra) var(--ease-fluid) both;
-  will-change: opacity, transform, filter;
+  will-change: opacity, transform;
 }
 
 @keyframes pageSoftIn {
   from {
     opacity: 0;
-    transform: translateY(18px) scale(0.992);
-    filter: blur(8px);
+    transform: translateY(14px) scale(0.994);
   }
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
-    filter: blur(0);
   }
 }
 
@@ -488,10 +486,10 @@ h1, h2, h3, h4, h5, h6 {
   font-size: var(--text-sm);
   font-weight: 400;
   color: var(--c-text-2);
-  transition: all var(--dur-base) var(--ease-soft);
+  transition: color var(--dur-base) var(--ease-soft), background var(--dur-base) var(--ease-soft), transform var(--dur-base) var(--ease-soft);
   white-space: nowrap;
   text-decoration: none;
-  will-change: transform, background;
+  will-change: transform;
 }
 .topnav-link:hover { background: var(--c-surface-2); color: var(--c-text); text-decoration: none; transform: translateY(-1px); }
 .topnav-link.active { background: var(--c-surface-3); color: var(--c-text); font-weight: 500; box-shadow: inset 0 1px 0 rgba(255,255,255,0.6); }
@@ -513,7 +511,7 @@ h1, h2, h3, h4, h5, h6 {
   align-items: center;
   justify-content: center;
   color: var(--c-text-2);
-  transition: all var(--dur-base) var(--ease-soft);
+  transition: color var(--dur-base) var(--ease-soft), background var(--dur-base) var(--ease-soft), transform var(--dur-base) var(--ease-soft), box-shadow var(--dur-base) var(--ease-soft);
   position: relative;
 }
 .topnav-icon-btn:hover { background: var(--c-surface-2); color: var(--c-text); transform: translateY(-1px); box-shadow: var(--shadow-xs); }
@@ -529,9 +527,10 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: var(--r-sm);
   font-size: var(--text-sm);
   font-weight: 500;
-  transition: all var(--dur-slow) var(--ease-spring);
+  transition: background var(--dur-slow) var(--ease-spring), transform var(--dur-slow) var(--ease-spring), box-shadow var(--dur-slow) var(--ease-spring);
   cursor: pointer;
   box-shadow: 0 8px 26px rgba(0,0,0,0.16);
+  will-change: transform;
 }
 .topnav-ai-btn:hover {
   background: #1a1a1a;
@@ -551,8 +550,9 @@ h1, h2, h3, h4, h5, h6 {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all var(--dur-fast) ease;
+  transition: transform var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
   flex-shrink: 0;
+  will-change: transform;
 }
 .topnav-avatar:hover { transform: scale(1.05); box-shadow: var(--shadow-sm); }
 
@@ -613,11 +613,11 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--c-text-3);
   font-size: 10px;
   font-weight: 400;
-  transition: all var(--dur-base) var(--ease-soft);
+  transition: color var(--dur-base) var(--ease-soft), transform var(--dur-base) var(--ease-soft);
   text-decoration: none;
   flex: 1;
   justify-content: center;
-  will-change: transform, background;
+  will-change: transform;
 }
 .bottom-tab:hover { color: var(--c-text-2); text-decoration: none; transform: translateY(-1px); }
 .bottom-tab.active { color: var(--c-primary); font-weight: 500; box-shadow: inset 0 1px 0 rgba(255,255,255,0.6); }

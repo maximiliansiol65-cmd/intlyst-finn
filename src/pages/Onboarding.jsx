@@ -3,6 +3,12 @@ import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../contexts/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
+import {
+  COMPANY_PROFILE_OPTIONS,
+  COMPANY_PROFILE_STORAGE_KEY,
+  getCompanyProfile,
+  inferCompanyProfile,
+} from "../config/companyProfiles";
 import "../styles/onboarding-v3.css";
 
 const STEP_COUNT = 7;
@@ -62,7 +68,7 @@ export default function Onboarding() {
   const { setTheme } = useTheme();
 
   const [step, setStep] = useState(0);
-  const [timer, setTimer] = useState(180);
+  const [timer, setTimer] = useState(60);
 
   const [company, setCompany] = useState("");
   const [industry, setIndustry] = useState("");
@@ -73,6 +79,9 @@ export default function Onboarding() {
 
   const [selectedGoals, setSelectedGoals] = useState([]);
   const [selectedConnectors, setSelectedConnectors] = useState([]);
+  const [selectedProfile, setSelectedProfile] = useState(
+    () => localStorage.getItem(COMPANY_PROFILE_STORAGE_KEY) || ""
+  );
 
   const [accent, setAccent] = useState(
     localStorage.getItem("intlyst_accent") || accentOptions[0]
@@ -95,6 +104,16 @@ export default function Onboarding() {
   }, []);
 
   useEffect(() => {
+    const inferred = inferCompanyProfile({
+      team,
+      goals: selectedGoals,
+      industry,
+      mode,
+    });
+    setSelectedProfile((current) => current || inferred);
+  }, [team, selectedGoals, industry, mode]);
+
+  useEffect(() => {
     document.documentElement.style.setProperty("--accent", accent);
     document.documentElement.style.setProperty("--accent-soft", `${accent}22`);
     document.documentElement.style.setProperty("--accent-strong", lighten(accent, 0.08));
@@ -113,32 +132,31 @@ export default function Onboarding() {
       setInsights([]);
       const t = setTimeout(() => {
         setAnalyzing(false);
+        const profile = getCompanyProfile(selectedProfile || "management_ceo");
         setInsights([
           {
             title: "Größte Chance",
-            text: selectedGoals.includes("social")
-              ? "Social Media Wachstum durch Creator-Kooperationen (+28% CTR möglich)."
-              : "Upsell-Potenzial bei bestehenden Kunden durch Bundles und Add-ons.",
+            text: profile.analysis.actions[0],
           },
           {
             title: "Größte Schwäche",
-            text: "Conversion bricht auf Produktseite nach 12 Sekunden ab – klare USP-Leiste fehlt.",
+            text: `${profile.dashboard.warningLabel}: Wir blenden nur Risiken ein, die jetzt relevant sind.`,
           },
           {
             title: "Schneller Gewinn",
-            text: "Aktiviere den 3-Schritte-Plan: 1) Social Proof, 2) Exit-Intent-Angebot, 3) KPI-Alert bei Abbrüchen.",
+            text: profile.analysis.actions[1],
           },
         ]);
-      }, 2600);
+      }, 1200);
       return () => clearTimeout(t);
     }
     return undefined;
-  }, [step, selectedGoals]);
+  }, [selectedGoals, selectedProfile, step]);
 
   const canProceed = useMemo(() => {
     if (step === 0) return true;
     if (step === 1) return company && industry && mode && team && country && language;
-    if (step === 2) return selectedGoals.length > 0;
+    if (step === 2) return selectedGoals.length > 0 && selectedProfile;
     if (step === 3) return true;
     if (step === 4) return true;
     if (step === 5) return !analyzing;
@@ -151,6 +169,8 @@ export default function Onboarding() {
     primary: accent,
     soft: `${accent}18`,
   };
+  const recommendedProfileId = inferCompanyProfile({ team, goals: selectedGoals, industry, mode });
+  const selectedProfileConfig = getCompanyProfile(selectedProfile || recommendedProfileId);
 
   async function finish() {
     setSaving(true);
@@ -173,6 +193,7 @@ export default function Onboarding() {
             themeMode,
             dashboardSize,
             fontScale,
+            companyProfile: selectedProfileConfig.id,
           },
         }),
       });
@@ -186,15 +207,18 @@ export default function Onboarding() {
         localStorage.setItem("intlyst_accent", accent);
         localStorage.setItem("intlyst_dashboard_size", dashboardSize);
         localStorage.setItem("intlyst_font_scale", String(fontScale));
+        localStorage.setItem(COMPANY_PROFILE_STORAGE_KEY, selectedProfileConfig.id);
+        localStorage.setItem("intlyst_dashboard_role", selectedProfileConfig.dashboardRole);
 
         login(token, {
           ...(user || {}),
           company,
           industry,
+          company_profile: selectedProfileConfig.id,
           onboarding_done: true,
         }, null);
 
-        navigate("/ceo");
+        navigate("/");
       }
     } catch (err) {
       console.error(err);
@@ -250,7 +274,7 @@ export default function Onboarding() {
           </div>
         </div>
         <div className="onb-timer">
-          <span>3-Minuten-Setup</span>
+          <span>1-Minuten-Setup</span>
           <strong>{formatTimer(timer)}</strong>
         </div>
       </div>
@@ -260,7 +284,7 @@ export default function Onboarding() {
           {step === 0 && (
             <div className="onb-hero">
               <div className="onb-eyebrow">Willkommen</div>
-              <h1>Richte dein Unternehmen in 3 Minuten ein</h1>
+              <h1>Richte dein Unternehmen in 1 Minute ein</h1>
               <p>
                 Intlyst analysiert dein Unternehmen automatisch und zeigt dir sofort,
                 was du verbessern kannst.
@@ -367,6 +391,27 @@ export default function Onboarding() {
                     </button>
                   );
                 })}
+              </div>
+              <div className="onb-rail-card" style={{ marginTop: "var(--s-5)" }}>
+                <div className="rail-title">Empfohlene Version</div>
+                <p style={{ marginTop: 0 }}>
+                  Automatisch erkannt: <strong>{getCompanyProfile(recommendedProfileId).label}</strong>.
+                  Du kannst das bei Bedarf direkt bestaetigen oder anpassen.
+                </p>
+                <div className="onb-chips" style={{ marginTop: "var(--s-3)" }}>
+                  {COMPANY_PROFILE_OPTIONS.map((profile) => (
+                    <button
+                      key={profile.id}
+                      className={`chip ${selectedProfileConfig.id === profile.id ? "active" : ""}`}
+                      onClick={() => setSelectedProfile(profile.id)}
+                    >
+                      {profile.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="onb-subtle" style={{ marginTop: "var(--s-3)" }}>
+                  {selectedProfileConfig.description}
+                </div>
               </div>
             </div>
           )}
@@ -545,19 +590,19 @@ export default function Onboarding() {
                 <div className="insight-card">
                   <div className="insight-label">1. Quick Win</div>
                   <div className="insight-text">
-                    Baue Social Proof in deinen Checkout (+12% Conversion), läuft in 1 Klick.
+                    {selectedProfileConfig.analysis.actions[0]}.
                   </div>
                 </div>
                 <div className="insight-card">
                   <div className="insight-label">2. Wachstum</div>
                   <div className="insight-text">
-                    Starte das 7-Tage Social Sprint Playbook, zugeschnitten auf deine Branche.
+                    {selectedProfileConfig.analysis.actions[1]}.
                   </div>
                 </div>
                 <div className="insight-card">
                   <div className="insight-label">3. Effizienz</div>
                   <div className="insight-text">
-                    Aktiviere Automations-Regeln: KPI-Alerts, Outreach-Tasks, CRM Sync.
+                    {selectedProfileConfig.analysis.actions[2]}.
                   </div>
                 </div>
               </div>

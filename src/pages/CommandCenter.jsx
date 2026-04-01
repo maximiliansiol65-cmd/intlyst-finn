@@ -2,8 +2,12 @@
 import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { useCompanyProfile } from "../contexts/CompanyProfileContext";
 import "../styles/premium-dashboard.css";
 import CalendarTab from "../components/CalendarTab";
+import CurrentGoalsPanel from "../components/goals/CurrentGoalsPanel";
+import ManagementTeamPanel from "../components/management/ManagementTeamPanel";
+import AssistantOpsPanel from "../components/management/AssistantOpsPanel";
 
 // ─── Local Storage Keys ───────────────────────────────────────────────────────
 const LS_GOALS   = "intlyst_cmd_goals";
@@ -40,12 +44,12 @@ const DEFAULT_BLOCKS = [
   { id: 5, day: "Freitag",    start: "15:00", end: "17:00", category: "analyse",   title: "Wochenanalyse & Review" },
 ];
 const TABS = [
-  { id: "heute",    label: "Heute",    emoji: "🌅" },
-  { id: "aufgaben", label: "Aufgaben", emoji: "✅" },
+  { id: "heute",    label: "Übersicht",   emoji: "🌅" },
+  { id: "aufgaben", label: "Koordination", emoji: "✅" },
   { id: "ziele",    label: "Ziele",    emoji: "🎯" },
-  { id: "planung",  label: "Planung",  emoji: "📅" },
-  { id: "kalender", label: "Kalender", emoji: "📆" },
-  { id: "reviews",  label: "Reviews",  emoji: "🔍" },
+  { id: "planung",  label: "Ressourcen",  emoji: "📅" },
+  { id: "kalender", label: "Kalender",   emoji: "📆" },
+  { id: "reviews",  label: "Reporting",   emoji: "🔍" },
 ];
 const DAY_PLANS = {
   "Montag":     "Strategietag — Plane deine Woche und setze klare Prioritäten.",
@@ -56,6 +60,128 @@ const DAY_PLANS = {
   "Samstag":    "Wochenrückblick — Überblick verschaffen, nächste Woche vorbereiten.",
   "Sonntag":    "Wochenrückblick — Überblick verschaffen, nächste Woche vorbereiten.",
 };
+
+const ROLE_RULES = [
+  { label: "CMO", match: ["marketing", "growth", "campaign", "content", "performance"] },
+  { label: "CFO", match: ["finance", "finanzen", "cfo", "budget", "cash", "profit"] },
+  { label: "Strategist", match: ["strategie", "strateg", "market", "analyse", "research"] },
+  { label: "Assistant", match: ["assistant", "assist", "support", "ops", "admin", "office"] },
+];
+
+function isTaskOverdue(task) {
+  return Boolean(task?.due_date && task.status !== "done" && new Date(`${task.due_date}T00:00:00`) < new Date());
+}
+
+function inferRoleFromTask(task) {
+  const haystack = `${task?.assigned_to || ""} ${task?.department || ""} ${task?.title || ""} ${task?.description || ""}`.toLowerCase();
+  const matched = ROLE_RULES.find((rule) => rule.match.some((token) => haystack.includes(token)));
+  return matched?.label || "Assistant";
+}
+
+function summarizeOperations(tasks = [], goals = [], briefing = null) {
+  const openTasks = tasks.filter((task) => task.status !== "done");
+  const overdueTasks = openTasks.filter(isTaskOverdue);
+  const unassignedTasks = openTasks.filter((task) => !task.assigned_to);
+  const unlinkedTasks = openTasks.filter((task) => !(task.goal || task.expected_result || (task.kpis && task.kpis.length)));
+  const highPriorityTasks = openTasks.filter((task) => task.priority === "high");
+  const roleCounts = ROLE_RULES.map((rule) => ({
+    role: rule.label,
+    count: openTasks.filter((task) => inferRoleFromTask(task) === rule.label).length,
+  }));
+  const negativeSignals = (briefing?.events || []).filter((event) => Number(event.delta_pct) < 0).slice(0, 2);
+  const atRiskGoals = goals.filter((goal) => {
+    const progress = Number(goal.progress_pct ?? goal.progress ?? 0);
+    return progress > 0 && progress < 50;
+  }).slice(0, 2);
+
+  const criticalItems = [
+    overdueTasks[0] ? `Überfällige Aufgabe: ${overdueTasks[0].title}` : null,
+    unassignedTasks[0] ? `Unklare Zuständigkeit: ${unassignedTasks[0].title}` : null,
+    unlinkedTasks[0] ? `Ohne KPI/Ziel: ${unlinkedTasks[0].title}` : null,
+    negativeSignals[0] ? `Operatives Risiko: ${negativeSignals[0].metric_label}` : null,
+  ].filter(Boolean);
+
+  const dailyReport = `Heute offen: ${openTasks.length}, davon ${overdueTasks.length} überfällig und ${highPriorityTasks.length} mit hoher Priorität. ${negativeSignals[0] ? `Kritisch ist aktuell ${negativeSignals[0].metric_label.toLowerCase()}.` : "Keine akute KPI-Eskalation erkannt."}`;
+  const weeklyReport = `Diese Woche stehen ${goals.length} Ziele und ${openTasks.length} operative Aufgaben im Fokus. ${atRiskGoals[0] ? `Besondere Aufmerksamkeit benötigt ${atRiskGoals[0].title || atRiskGoals[0].metric_label}.` : "Kein Ziel ist aktuell deutlich vom Plan entfernt."}`;
+
+  return {
+    openTasks,
+    overdueTasks,
+    unassignedTasks,
+    unlinkedTasks,
+    highPriorityTasks,
+    roleCounts,
+    negativeSignals,
+    atRiskGoals,
+    criticalItems,
+    dailyReport,
+    weeklyReport,
+    overloadRisk: openTasks.length >= 12 || overdueTasks.length >= 3,
+  };
+}
+
+function CooOverviewPanel({ tasks, goals, briefing }) {
+  const summary = useMemo(() => summarizeOperations(tasks, goals, briefing), [tasks, goals, briefing]);
+
+  return (
+    <section className="ceo-section">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--s-3)", flexWrap: "wrap", marginBottom: "var(--s-4)" }}>
+        <div>
+          <div className="section-title" style={{ marginBottom: 4 }}>Betriebsübersicht</div>
+          <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-3)" }}>
+            Operative Übersicht, Aufgabenkoordination, Ressourcenwarnungen und klare nächste Schritte.
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
+          <span className="badge badge-neutral badge-sm">Offen {summary.openTasks.length}</span>
+          <span className={`badge badge-sm ${summary.overdueTasks.length > 0 ? "badge-danger" : "badge-success"}`}>Überfällig {summary.overdueTasks.length}</span>
+          <span className={`badge badge-sm ${summary.overloadRisk ? "badge-warning" : "badge-neutral"}`}>Kapazität {summary.overloadRisk ? "unter Druck" : "stabil"}</span>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: "var(--s-3)" }}>
+        <div className="card" style={{ padding: "var(--s-4)", display: "grid", gap: "var(--s-2)" }}>
+          <div className="label">Operative Übersicht</div>
+          <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text)" }}>{summary.dailyReport}</div>
+          <div style={{ fontSize: "var(--text-xs)", color: "var(--c-text-3)" }}>
+            Sofort prüfen: {summary.criticalItems[0] || "Keine akute operative Eskalation."}
+          </div>
+        </div>
+        <div className="card" style={{ padding: "var(--s-4)", display: "grid", gap: "var(--s-2)" }}>
+          <div className="label">Aufgabenkoordination</div>
+          <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text)" }}>
+            {summary.unassignedTasks.length > 0
+              ? `${summary.unassignedTasks.length} Aufgaben haben keine klare Zuständigkeit.`
+              : "Alle offenen Aufgaben sind einer Verantwortlichkeit zugeordnet."}
+          </div>
+          <div style={{ fontSize: "var(--text-xs)", color: "var(--c-text-3)" }}>
+            KPI-Verknüpfung fehlt bei {summary.unlinkedTasks.length} offenen Aufgaben.
+          </div>
+        </div>
+        <div className="card" style={{ padding: "var(--s-4)", display: "grid", gap: "var(--s-2)" }}>
+          <div className="label">Ressourcen & Rollen</div>
+          <div style={{ display: "grid", gap: 4 }}>
+            {summary.roleCounts.map((item) => (
+              <div key={item.role} style={{ fontSize: "var(--text-sm)", color: "var(--c-text)" }}>
+                {item.role}: {item.count} offene Aufgaben
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: "var(--text-xs)", color: "var(--c-text-3)" }}>
+            {summary.overloadRisk ? "Warnung: Überlastung oder Stau wahrscheinlich." : "Ressourcenniveau aktuell beherrschbar."}
+          </div>
+        </div>
+        <div className="card" style={{ padding: "var(--s-4)", display: "grid", gap: "var(--s-2)" }}>
+          <div className="label">Wöchentlicher Bericht</div>
+          <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text)" }}>{summary.weeklyReport}</div>
+          <div style={{ fontSize: "var(--text-xs)", color: "var(--c-text-3)" }}>
+            Empfehlung: erst Engpässe auflösen, dann neue Initiativen verteilen.
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 // ─── Shared Styles ────────────────────────────────────────────────────────────
 const labelStyle = {
@@ -101,8 +227,8 @@ function TabHeute({ tasks, loadingTasks, onTabChange }) {
     { label: "Ziel festlegen",         tab: "ziele",    icon: "🎯", href: null },
     { label: "Zeit blockieren",        tab: "planung",  icon: "📅", href: null },
     { label: "Analyse öffnen",         href: "/analyse", icon: "📊", tab: null },
-    { label: "AI-Empfehlungen",        href: "/ceo",     icon: "🤖", tab: null },
-    { label: "Alerts prüfen",          href: "/alerts",  icon: "🔔", tab: null },
+    { label: "Beratung öffnen",          href: "/ceo",     icon: "🎯", tab: null },
+    { label: "Signale prüfen",         href: "/alerts",  icon: "🔔", tab: null },
   ];
 
   return (
@@ -403,37 +529,63 @@ function TabAufgaben({ tasks, loadingTasks, onCreateTask, onUpdateStatus, onDele
 }
 
 // ─── Tab: Ziele ───────────────────────────────────────────────────────────────
-function TabZiele() {
+function TabZiele({ goals, loadingGoals, goalsError, onRefreshGoals }) {
   const [period, setPeriod] = useState("woche");
-  const [goals, setGoals] = useState(() => lsGet(LS_GOALS, {}));
+  const { profile } = useCompanyProfile();
+  const [localGoals, setLocalGoals] = useState(() => lsGet(LS_GOALS, {}));
   const [form, setForm] = useState({ title: "", target: "", unit: "", kpi: "", department: "" });
   const [showForm, setShowForm] = useState(false);
 
-  const periodLabels = { woche: "Diese Woche", monat: "Diesen Monat", quartal: "Dieses Quartal" };
-  const currentGoals = goals[period] || [];
+  const periodLabels = { woche: "Diese Woche", monat: "Diesen Monat", jahr: "Dieses Jahr" };
+  const currentGoals = localGoals[period] || [];
+  const localGoalsFlattened = useMemo(() => {
+    return Object.entries(localGoals).flatMap(([periodKey, items]) =>
+      (items || []).map((goal) => ({
+        ...goal,
+        period: periodKey === "woche" ? "weekly" : periodKey === "monat" ? "monthly" : "yearly",
+        metric_label: goal.kpi || goal.metric_label || "KPI",
+        target_value: goal.target,
+        current_value: goal.current_value ?? null,
+        progress_pct: goal.progress,
+        owner_role: goal.department || profile.shortLabel,
+        recommendation: goal.recommendation || `${goal.kpi || "KPI"} enger steuern und nächste Maßnahme direkt zuweisen.`,
+        cause: goal.reason || "Manuell erfasstes Ziel ohne hinterlegte Ursachenanalyse.",
+        impact: goal.impact || `Direkter Einfluss auf ${goal.kpi || "die Kern-KPI"}.`,
+        priority: goal.priority,
+      })),
+    );
+  }, [localGoals, profile.shortLabel]);
+  const mergedGoals = [...goals, ...localGoalsFlattened];
 
   function addGoal() {
     if (!form.title.trim()) return;
-    const newGoal = { id: Date.now(), ...form, progress: 0, created: new Date().toISOString() };
-    const updated = { ...goals, [period]: [...currentGoals, newGoal] };
-    setGoals(updated);
+    const newGoal = {
+      id: Date.now(),
+      ...form,
+      progress: 0,
+      created: new Date().toISOString(),
+      priority: period === "woche" ? "hoch" : period === "monat" ? "mittel" : "niedrig",
+      status: "Offen",
+    };
+    const updated = { ...localGoals, [period]: [...currentGoals, newGoal] };
+    setLocalGoals(updated);
     lsSet(LS_GOALS, updated);
     setForm({ title: "", target: "", unit: "", kpi: "", department: "" });
     setShowForm(false);
   }
 
   function removeGoal(id) {
-    const updated = { ...goals, [period]: currentGoals.filter(g => g.id !== id) };
-    setGoals(updated);
+    const updated = { ...localGoals, [period]: currentGoals.filter(g => g.id !== id) };
+    setLocalGoals(updated);
     lsSet(LS_GOALS, updated);
   }
 
   function updateProgress(id, progress) {
     const updated = {
-      ...goals,
+      ...localGoals,
       [period]: currentGoals.map(g => g.id === id ? { ...g, progress: Math.min(100, Math.max(0, Number(progress))) } : g),
     };
-    setGoals(updated);
+    setLocalGoals(updated);
     lsSet(LS_GOALS, updated);
   }
 
@@ -500,53 +652,40 @@ function TabZiele() {
           </div>
         )}
 
-        {/* Goal List */}
-        {currentGoals.length === 0 ? (
-          <div style={{ padding: "var(--s-8)", textAlign: "center", color: "var(--c-text-3)", background: "var(--c-surface-2)", borderRadius: "var(--r-md)" }}>
-            Noch keine Ziele für {periodLabels[period]}. Füge dein erstes Ziel hinzu.
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: "var(--s-3)" }}>
+        <CurrentGoalsPanel
+          goals={mergedGoals}
+          profile={profile}
+          loading={loadingGoals}
+          error={goalsError}
+          onRetry={onRefreshGoals}
+          emptyText={`Noch keine Ziele für ${periodLabels[period]} vorhanden.`}
+        />
+
+        {currentGoals.length > 0 && (
+          <div style={{ display: "grid", gap: "var(--s-3)", marginTop: "var(--s-4)" }}>
+            <div style={{ fontSize: "var(--text-xs)", color: "var(--c-text-3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Manuell angelegte Ziele für {periodLabels[period]}
+            </div>
             {currentGoals.map(goal => (
               <div key={goal.id} style={{ padding: "var(--s-4)", borderRadius: "var(--r-md)", border: "1px solid var(--c-border)", background: "var(--c-surface)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s-3)", marginBottom: "var(--s-3)" }}>
                   <div>
                     <div style={{ fontWeight: 700, color: "var(--c-text)", marginBottom: "var(--s-1)" }}>{goal.title}</div>
                     <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
-                      {goal.target && (
-                        <span style={{ fontSize: "var(--text-xs)", color: "var(--c-text-3)" }}>Ziel: {goal.target}{goal.unit}</span>
-                      )}
-                      {goal.kpi && (
-                        <span style={{ fontSize: "var(--text-xs)", padding: "2px 8px", borderRadius: "999px", background: "#dbeafe", color: "#2563eb" }}>
-                          KPI: {goal.kpi}
-                        </span>
-                      )}
-                      {goal.department && (
-                        <span style={{ fontSize: "var(--text-xs)", padding: "2px 8px", borderRadius: "999px", background: "var(--c-surface-2)", color: "var(--c-text-3)" }}>
-                          {goal.department}
-                        </span>
-                      )}
+                      {goal.target && <span style={{ fontSize: "var(--text-xs)", color: "var(--c-text-3)" }}>Ziel: {goal.target}{goal.unit}</span>}
+                      {goal.kpi && <span style={{ fontSize: "var(--text-xs)", padding: "2px 8px", borderRadius: "999px", background: "#dbeafe", color: "#2563eb" }}>KPI: {goal.kpi}</span>}
+                      {goal.department && <span style={{ fontSize: "var(--text-xs)", padding: "2px 8px", borderRadius: "999px", background: "var(--c-surface-2)", color: "var(--c-text-3)" }}>{goal.department}</span>}
                     </div>
                   </div>
-                  <button onClick={() => removeGoal(goal.id)} style={{
-                    background: "none", border: "none", color: "var(--c-text-3)",
-                    cursor: "pointer", fontSize: 20, padding: "2px 6px", lineHeight: 1,
-                  }}>×</button>
+                  <button onClick={() => removeGoal(goal.id)} style={{ background: "none", border: "none", color: "var(--c-text-3)", cursor: "pointer", fontSize: 20, padding: "2px 6px", lineHeight: 1 }}>×</button>
                 </div>
                 <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center" }}>
                   <div style={{ flex: 1, height: 8, background: "var(--c-surface-2)", borderRadius: 4, overflow: "hidden" }}>
-                    <div style={{
-                      height: "100%", width: `${goal.progress}%`, borderRadius: 4,
-                      background: goal.progress >= 100 ? "#10b981" : goal.progress >= 50 ? "#3b82f6" : "#f59e0b",
-                      transition: "width 0.3s ease",
-                    }} />
+                    <div style={{ height: "100%", width: `${goal.progress}%`, borderRadius: 4, background: goal.progress >= 100 ? "#10b981" : goal.progress >= 50 ? "#3b82f6" : "#f59e0b", transition: "width 0.3s ease" }} />
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "var(--s-2)", flexShrink: 0 }}>
-                    <input type="range" min="0" max="100" value={goal.progress}
-                      onChange={e => updateProgress(goal.id, e.target.value)} style={{ width: 80 }} />
-                    <span style={{ fontWeight: 700, fontSize: "var(--text-sm)", minWidth: 38, textAlign: "right" }}>
-                      {goal.progress}%
-                    </span>
+                    <input type="range" min="0" max="100" value={goal.progress} onChange={e => updateProgress(goal.id, e.target.value)} style={{ width: 80 }} />
+                    <span style={{ fontWeight: 700, fontSize: "var(--text-sm)", minWidth: 38, textAlign: "right" }}>{goal.progress}%</span>
                   </div>
                 </div>
               </div>
@@ -687,9 +826,10 @@ function TabPlanung() {
 }
 
 // ─── Tab: Reviews ─────────────────────────────────────────────────────────────
-function TabReviews() {
+function TabReviews({ tasks = [], goals = [], briefing = null }) {
   const [settings, setSettings] = useState(() => lsGet(LS_REVIEWS, DEFAULT_REVIEWS));
   const [saved, setSaved] = useState(false);
+  const opsSummary = useMemo(() => summarizeOperations(tasks, goals, briefing), [tasks, goals, briefing]);
 
   function save() {
     lsSet(LS_REVIEWS, settings);
@@ -721,6 +861,20 @@ function TabReviews() {
 
   return (
     <div style={{ display: "grid", gap: "var(--s-5)" }}>
+      <div className="ceo-section">
+        <div className="section-title">Statusberichte</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "var(--s-3)" }}>
+          <div style={{ padding: "var(--s-4)", borderRadius: "var(--r-md)", border: "1px solid var(--c-border)", background: "var(--c-surface-2)" }}>
+            <div className="label" style={{ marginBottom: 8 }}>Täglicher Betriebsbericht</div>
+            <div style={{ fontSize: "var(--text-sm)", lineHeight: 1.7 }}>{opsSummary.dailyReport}</div>
+          </div>
+          <div style={{ padding: "var(--s-4)", borderRadius: "var(--r-md)", border: "1px solid var(--c-border)", background: "var(--c-surface-2)" }}>
+            <div className="label" style={{ marginBottom: 8 }}>Wöchentlicher Betriebsbericht</div>
+            <div style={{ fontSize: "var(--text-sm)", lineHeight: 1.7 }}>{opsSummary.weeklyReport}</div>
+          </div>
+        </div>
+      </div>
+
       {/* Summary first */}
       <div className="ceo-section">
         <div className="section-title">Dein Review-Kalender</div>
@@ -785,9 +939,15 @@ function TabReviews() {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function CommandCenter() {
   const { authHeader } = useAuth();
+  const { profile } = useCompanyProfile();
   const [activeTab, setActiveTab] = useState("heute");
   const [tasks, setTasks] = useState([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
+  const [goals, setGoals] = useState([]);
+  const [loadingGoals, setLoadingGoals] = useState(true);
+  const [goalsError, setGoalsError] = useState(null);
+  const [briefing, setBriefing] = useState(null);
+  const [analysis, setAnalysis] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const today = useMemo(() =>
@@ -803,6 +963,59 @@ export default function CommandCenter() {
       .finally(() => { if (alive) setLoadingTasks(false); });
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    Promise.allSettled([
+      fetch("/api/decision/briefing", { headers: authHeader() }),
+      fetch("/api/analysis/summary", { headers: authHeader() }),
+    ]).then(async ([briefingRes, analysisRes]) => {
+      if (!alive) return;
+      if (briefingRes.status === "fulfilled" && briefingRes.value.ok) {
+        try { setBriefing(await briefingRes.value.json()); } catch { setBriefing(null); }
+      }
+      if (analysisRes.status === "fulfilled" && analysisRes.value.ok) {
+        try { setAnalysis(await analysisRes.value.json()); } catch { setAnalysis(null); }
+      }
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [authHeader, profile.id]);
+
+  async function refreshGoals() {
+    setLoadingGoals(true);
+    setGoalsError(null);
+    try {
+      const res = await fetch("/api/goals", { headers: authHeader() });
+      const data = res.ok ? await res.json() : [];
+      setGoals(Array.isArray(data) ? data : (data.goals || data.items || []));
+    } catch {
+      setGoals([]);
+      setGoalsError("Ziele konnten nicht geladen werden.");
+    } finally {
+      setLoadingGoals(false);
+    }
+  }
+
+  useEffect(() => {
+    let alive = true;
+    setLoadingGoals(true);
+    setGoalsError(null);
+    fetch("/api/goals", { headers: authHeader() })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        if (!alive) return;
+        setGoals(Array.isArray(data) ? data : (data.goals || data.items || []));
+      })
+      .catch(() => {
+        if (!alive) return;
+        setGoals([]);
+        setGoalsError("Ziele konnten nicht geladen werden.");
+      })
+      .finally(() => {
+        if (alive) setLoadingGoals(false);
+      });
+    return () => { alive = false; };
+  }, [authHeader, profile.id]);
 
   async function handleCreateTask(form) {
     setBusy(true);
@@ -844,13 +1057,13 @@ export default function CommandCenter() {
       {/* Header */}
       <header className="ceo-hero">
         <div>
-          <p className="eyebrow">CEO Command Center</p>
-          <h1>Dein Führungscockpit</h1>
-          <p className="sub">{today}</p>
+          <p className="eyebrow">Priorisierung</p>
+          <h1>Operative Steuerung & Koordination</h1>
+          <p className="sub">{today} · Projekte, Ressourcen, Engpässe und Umsetzung im Griff.</p>
         </div>
         <div className="hero-note">
           <span className="dot" />
-          <span>Du entscheidest — die KI berät.</span>
+          <span>Strategie wird hier in klare operative Umsetzung übersetzt.</span>
         </div>
       </header>
 
@@ -875,7 +1088,10 @@ export default function CommandCenter() {
 
       {/* Tab Content */}
       {activeTab === "heute" && (
-        <TabHeute tasks={tasks} loadingTasks={loadingTasks} onTabChange={setActiveTab} />
+        <div style={{ display: "grid", gap: "var(--s-5)" }}>
+          <CooOverviewPanel tasks={tasks} goals={goals} briefing={briefing} />
+          <TabHeute tasks={tasks} loadingTasks={loadingTasks} onTabChange={setActiveTab} />
+        </div>
       )}
       {activeTab === "aufgaben" && (
         <TabAufgaben
@@ -887,7 +1103,7 @@ export default function CommandCenter() {
           busy={busy}
         />
       )}
-      {activeTab === "ziele"    && <TabZiele />}
+      {activeTab === "ziele"    && <TabZiele goals={goals} loadingGoals={loadingGoals} goalsError={goalsError} onRefreshGoals={refreshGoals} />}
       {activeTab === "planung"  && <TabPlanung />}
       {activeTab === "kalender" && (
         <CalendarTab
@@ -895,7 +1111,7 @@ export default function CommandCenter() {
           blocks={lsGet(LS_BLOCKS, DEFAULT_BLOCKS)}
         />
       )}
-      {activeTab === "reviews"  && <TabReviews />}
+      {activeTab === "reviews"  && <TabReviews tasks={tasks} goals={goals} briefing={briefing} />}
     </div>
   );
 }

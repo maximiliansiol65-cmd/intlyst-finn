@@ -14,12 +14,11 @@ export default function TeamCenterPage() {
       }}
     >
       <div style={{ marginBottom: "var(--s-6)" }}>
-        <div className="page-title">Team</div>
-        <div className="page-subtitle">Mitglieder, Rollen, Teams und Arbeitszeiten verwalten</div>
+        <div className="page-title">Verantwortung & Team</div>
+        <div className="page-subtitle">Rollen, Teams und Arbeitszeiten als Basis für klare Aufgabenverteilung</div>
       </div>
 
       <TeamCenter />
     </div>
   );
 }
-

@@ -289,18 +289,11 @@ export default function AnalysisWidget({ days = 30 }) {
           }}
         >
           <div
-            style={{
-              width: 18,
-              height: 18,
-              borderRadius: "50%",
-              border: "2px solid #6366f1",
-              borderTopColor: "transparent",
-              animation: "spin 0.8s linear infinite",
-              flexShrink: 0,
-            }}
+            className="spinner"
+            style={{ flexShrink: 0 }}
           />
           <div>
-            <div style={{ fontSize: 13, color: "#374151", marginBottom: 3 }}>Analysiere Geschaftsdaten...</div>
+            <div style={{ fontSize: 13, color: "#374151", marginBottom: 3 }}>Analysiere Geschäftsdaten...</div>
             <div style={{ fontSize: 11, color: "#334155" }}>Echtzeitdaten werden ausgewertet</div>
           </div>
         </div>
@@ -413,7 +406,7 @@ export default function AnalysisWidget({ days = 30 }) {
         </div>
       )}
 
-      <style>{"@keyframes spin { to { transform: rotate(360deg); } }"}</style>
+      </div>
     </div>
   );
 }
