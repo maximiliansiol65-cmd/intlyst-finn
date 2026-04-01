@@ -192,7 +192,7 @@ export default function Onboarding() {
           company,
           industry,
           onboarding_done: true,
-        });
+        }, null);
 
         navigate("/ceo");
       }

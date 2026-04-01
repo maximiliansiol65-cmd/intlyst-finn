@@ -13,6 +13,7 @@ const IcoPeople  = () => (<svg width="22" height="22" viewBox="0 0 24 24" fill="
 const IcoGlobe   = () => (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5"/><path d="M2 12h20M12 2c-3 3-4 7-4 10s1 7 4 10M12 2c3 3 4 7 4 10s-1 7-4 10" stroke="currentColor" strokeWidth="1.5"/></svg>);
 const IcoGear    = () => (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.5"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" strokeWidth="1.5"/></svg>);
 const IcoCommand = () => (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="1.5"/><path d="M8 12h8M12 8v8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>);
+const IcoPlanner = () => (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M7 3v4M17 3v4M3 9h18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>);
 
 // Alle verfügbaren Tabs (auch für Settings-Editor exportiert)
 export const ALL_TABS = [
@@ -25,6 +26,7 @@ export const ALL_TABS = [
   { id: "empfehlungen", to: "/ceo",   label: "AI-Berater",Icon: IcoRocket            },
   { id: "kunden",    to: "/kunden",   label: "Kunden",    Icon: IcoPeople            },
   { id: "market",    to: "/market",   label: "Markt",     Icon: IcoGlobe             },
+  { id: "planner",   to: "/planner",  label: "Planer",    Icon: IcoPlanner           },
   { id: "settings",  to: "/settings", label: "Settings",  Icon: IcoGear              },
   { id: "mehr",      to: "/mehr",     label: "Mehr",      Icon: IcoGrid              },
 ];

@@ -32,7 +32,7 @@ export function WeeklyReview({
     },
     {
       id: 2,
-      title: "Landing Page A/B Test",
+      title: "Landing Page Experiment",
       description: "Teste neue CTA Button Farbe und Copy",
       impact: "Could increase conversion by 2%",
       icon: "🎨",

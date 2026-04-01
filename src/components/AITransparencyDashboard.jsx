@@ -307,7 +307,7 @@ export function AITransparencyDashboard() {
                 { label: "Kundenbereitschaft", value: 71, color: "#BA7517" },
                 { label: "Produktkomplementarität", value: 44, color: "#BA7517" },
               ],
-              explanation: "Datenqualität ausreichend für Hypothese. A/B-Test empfohlen: Klassischer Upsell vs. intelligente Bundle-Vorschläge.",
+              explanation: "Datenqualität ausreichend für Hypothese. Experiment empfohlen: Klassischer Upsell vs. intelligente Bundle-Vorschläge.",
             }}
           />
         </div>

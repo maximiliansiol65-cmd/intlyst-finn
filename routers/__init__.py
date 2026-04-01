@@ -4,8 +4,9 @@ from routers import (
     benchmark, billing, cohorts, custom_kpis, customers, dev_seed, digest,
     forecast, funnels, ga4, goals, growth, integrations, integrations_connect,
     intlyst, kpi, location, market, market_watch, notifications, recommendations, reports,
-    planning, proactive, tasks, team, timeseries, trends,
-    workspaces, instagram, referral, personalization,
+    planning, proactive, tasks, team, teams, timeseries, trends,
+    workspaces, instagram, referral, personalization, companies, plans, suggestions,
+    audit_logs, time_blocks, work_schedules,
 )
 
 __all__ = [
@@ -40,6 +41,12 @@ __all__ = [
     "instagram",
     "intlyst",
     "planning",
+    "companies",
+    "plans",
+    "suggestions",
+    "audit_logs",
+    "time_blocks",
+    "work_schedules",
     "proactive",
     "kpi",
     "location",
@@ -52,6 +59,7 @@ __all__ = [
     "personalization",
     "tasks",
     "team",
+    "teams",
     "timeseries",
     "trends",
     "workspaces",

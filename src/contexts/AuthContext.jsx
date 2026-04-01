@@ -5,48 +5,68 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem("biz_token") || "");
+  const [refreshToken, setRefreshToken] = useState(localStorage.getItem("biz_refresh_token") || "");
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(
     Number(localStorage.getItem("biz_workspace_id") || 0) || null,
   );
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (token) {
+    let alive = true;
+    async function boot() {
+      if (!token) {
+        setLoading(false);
+        return;
+      }
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-      fetch("/api/auth/me", {
-        headers: { Authorization: `Bearer ${token}` },
-        signal: controller.signal,
-      })
-        .then((response) => (response.ok ? response.json() : null))
-        .then((data) => {
-          if (data) {
-            setUser(data);
-            if (data.active_workspace_id) {
-              setActiveWorkspaceId(Number(data.active_workspace_id));
-              localStorage.setItem("biz_workspace_id", String(data.active_workspace_id));
-            }
-          } else {
-            setToken("");
-            localStorage.removeItem("biz_token");
-          }
-        })
-        .catch(() => {
-          setToken("");
-          localStorage.removeItem("biz_token");
-        })
-        .finally(() => {
-          clearTimeout(timeoutId);
-          setLoading(false);
+      try {
+        const res = await fetch("/api/auth/me", {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
         });
-    } else {
-      setLoading(false);
+        if (res.ok) {
+          const data = await res.json();
+          if (!alive) return;
+          setUser(data);
+          if (data.active_workspace_id) {
+            setActiveWorkspaceId(Number(data.active_workspace_id));
+            localStorage.setItem("biz_workspace_id", String(data.active_workspace_id));
+          }
+        } else {
+          const refreshed = await refreshSessionInternal();
+          if (!refreshed && alive) {
+            setToken("");
+            setRefreshToken("");
+            setUser(null);
+            localStorage.removeItem("biz_token");
+            localStorage.removeItem("biz_refresh_token");
+          }
+        }
+      } catch {
+        const refreshed = await refreshSessionInternal();
+        if (!refreshed && alive) {
+          setToken("");
+          setRefreshToken("");
+          setUser(null);
+          localStorage.removeItem("biz_token");
+          localStorage.removeItem("biz_refresh_token");
+        }
+      } finally {
+        clearTimeout(timeoutId);
+        if (alive) setLoading(false);
+      }
     }
+    boot();
+    return () => { alive = false; };
   }, []);
 
-  function login(tokenStr, userData) {
+  function login(tokenStr, userData, refreshTokenStr) {
     setToken(tokenStr);
+    if (refreshTokenStr) {
+      setRefreshToken(refreshTokenStr);
+      localStorage.setItem("biz_refresh_token", refreshTokenStr);
+    }
     setUser(userData);
     localStorage.setItem("biz_token", tokenStr);
     if (userData?.active_workspace_id) {
@@ -60,13 +80,16 @@ export function AuthProvider({ children }) {
     setToken("");
     setUser(null);
     localStorage.removeItem("biz_token");
+    setRefreshToken("");
+    localStorage.removeItem("biz_refresh_token");
     setActiveWorkspaceId(null);
     localStorage.removeItem("biz_workspace_id");
   }
 
   function authHeader() {
-    if (!token) return {};
-    const headers = { Authorization: `Bearer ${token}` };
+    const stored = token || localStorage.getItem("biz_token") || "";
+    if (!stored) return {};
+    const headers = { Authorization: `Bearer ${stored}` };
     if (activeWorkspaceId) {
       headers["X-Workspace-ID"] = String(activeWorkspaceId);
     }
@@ -83,17 +106,58 @@ export function AuthProvider({ children }) {
     }
   }
 
+  async function refreshSessionInternal() {
+    if (!refreshToken) return false;
+    try {
+      const res = await fetch("/api/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (!data?.access_token) return false;
+      setToken(data.access_token);
+      localStorage.setItem("biz_token", data.access_token);
+      if (data.refresh_token) {
+        setRefreshToken(data.refresh_token);
+        localStorage.setItem("biz_refresh_token", data.refresh_token);
+      }
+      setUser({
+        id: data.user_id,
+        email: data.email,
+        name: data.name,
+        onboarding_done: data.onboarding_done,
+        active_workspace_id: data.active_workspace_id,
+        role: data.role,
+      });
+      if (data.active_workspace_id) {
+        setActiveWorkspaceId(Number(data.active_workspace_id));
+        localStorage.setItem("biz_workspace_id", String(data.active_workspace_id));
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function refreshSession() {
+    return refreshSessionInternal();
+  }
+
   return (
     <AuthContext.Provider
       value={{
         user,
         token,
+        refreshToken,
         loading,
         login,
         logout,
         authHeader,
         activeWorkspaceId,
         setActiveWorkspace,
+        refreshSession,
       }}
     >
       {children}

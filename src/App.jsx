@@ -38,7 +38,6 @@ const Standort = lazy(() => import("./pages/Standort"));
 const Tasks = lazy(() => import("./pages/Tasks"));
 const Alerts = lazy(() => import("./pages/Alerts"));
 const Settings = lazy(() => import("./pages/Settings"));
-const ABTests = lazy(() => import("./pages/ABTests"));
 const Market = lazy(() => import("./pages/Market"));
 const Mehr = lazy(() => import("./pages/Mehr"));
 const ReportsHub = lazy(() => import("./pages/ReportsHub"));
@@ -47,6 +46,8 @@ const Ceo = lazy(() => import("./pages/Ceo"));
 const CommandCenter = lazy(() => import("./pages/CommandCenter"));
 const ReviewAudit = lazy(() => import("./pages/ReviewAudit"));
 const Social = lazy(() => import("./pages/Social"));
+const Planner = lazy(() => import("./pages/Planner"));
+const TeamCenter = lazy(() => import("./pages/TeamCenter"));
 
 // ── Loader ────────────────────────────────────────────────────────────────────
 function Gear({ size, duration, direction = 1, style = {} }) {
@@ -206,9 +207,10 @@ function AppRoutes() {
             <Route path="/alerts"    element={<Alerts />} />
             <Route path="/reports"   element={<ReportsHub />} />
             <Route path="/settings"  element={<Settings />} />
-            <Route path="/abtests"   element={<ABTests />} />
             <Route path="/market"    element={<Market />} />
             <Route path="/mehr"         element={<Mehr />} />
+            <Route path="/planner"      element={<Planner />} />
+            <Route path="/team"         element={<TeamCenter />} />
             <Route path="/integrations" element={<Integrations />} />
             <Route path="/social"      element={<Social />} />
             <Route path="/command"     element={<CommandCenter />} />

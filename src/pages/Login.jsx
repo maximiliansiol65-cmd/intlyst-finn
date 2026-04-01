@@ -163,7 +163,7 @@ export default function Login() {
           id: d.user_id, email: d.email, name: d.name,
           onboarding_done: d.onboarding_done,
           active_workspace_id: d.active_workspace_id,
-        });
+        }, d.refresh_token);
         navigate(d.onboarding_done ? "/" : "/onboarding");
       }
     } catch { setError("Verbindungsfehler – Backend läuft?"); }
@@ -218,7 +218,7 @@ export default function Login() {
           id: data.user_id, email: data.email, name: data.name,
           onboarding_done: data.onboarding_done,
           active_workspace_id: data.active_workspace_id,
-        });
+        }, data.refresh_token);
         navigate(data.onboarding_done ? "/" : "/onboarding");
       }
     } catch { setError("Verbindungsfehler – Backend läuft?"); }
@@ -266,14 +266,13 @@ export default function Login() {
         await Promise.allSettled([
           fetch("/api/dev/seed-demo",       { method: "POST", headers: h }),
           fetch("/api/customers/seed-demo", { method: "POST", headers: h }),
-          fetch("/api/abtests/seed-demo",   { method: "POST", headers: h }),
         ]);
         localStorage.setItem("intlyst_demo_seeded_v1", "1");
         login(data.access_token, {
           id: data.user_id, email: data.email, name: data.name,
           onboarding_done: data.onboarding_done,
           active_workspace_id: data.active_workspace_id,
-        });
+        }, data.refresh_token);
         navigate("/");
       } else { setError(data.detail || "Demo-Login fehlgeschlagen."); }
     } catch { setError("Verbindungsfehler – Backend läuft?"); }

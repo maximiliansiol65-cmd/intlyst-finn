@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+﻿import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
@@ -6,29 +6,28 @@ import { useToast } from "../contexts/ToastContext";
 import { useLanguage } from "../contexts/LanguageContext";
 import ReferralTab from "../components/ReferralTab";
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const TABS = [
   { key: "personalisierung",    label: "Personalisierung"    },
   { key: "konto",              label: "Konto"              },
-  { key: "team",               label: "Team"               },
   { key: "benachrichtigungen", label: "Benachrichtigungen" },
   { key: "sprache",            label: "Sprache"            },
   { key: "abonnement",         label: "Abonnement"         },
   { key: "governance",         label: "Governance"         },
-  { key:   "referral", label: "Freunde einladen", icon: "🎁", group: "Abo & Zahlung" },
+  { key:   "referral", label: "Freunde einladen", icon: "ðŸŽ", group: "Abo & Zahlung" },
 ];
 import PersonalizedDashboard from "./PersonalizedDashboard";
 import { ALL_TABS, PLAN_DEFAULTS, MAX_TABS, STORAGE_KEY, getTabsForPlan, saveTabsForPlan } from "../components/layout/BottomTabBar";
 import { usePlan } from "../contexts/PlanContext";
 
-// ── Schnelleiste-Editor ───────────────────────────────────────────────────────
+// â”€â”€ Schnelleiste-Editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function SchnelleisteEditor() {
   const toast = useToast();
   const { plan } = usePlan();
   const [selected, setSelected] = useState(() => getTabsForPlan(plan));
 
-  // Plan wechselt → Editor aktualisieren
+  // Plan wechselt â†’ Editor aktualisieren
   useEffect(() => {
     setSelected(getTabsForPlan(plan));
   }, [plan]);
@@ -56,17 +55,17 @@ function SchnelleisteEditor() {
     const defaults = PLAN_DEFAULTS[plan] ?? PLAN_DEFAULTS.trial;
     setSelected(defaults);
     saveTabsForPlan(plan, defaults);
-    toast.success("Auf Grundeinstellungen zurückgesetzt.");
+    toast.success("Auf Grundeinstellungen zurÃ¼ckgesetzt.");
   }
 
   return (
     <div>
       <div style={{ marginBottom: "var(--s-4)" }}>
         <p style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", margin: "0 0 var(--s-3)" }}>
-          Wähle bis zu <strong>{MAX_TABS}</strong> Tabs für deine Schnelleiste.
-          Aktuell ausgewählt: <strong>{selected.length} / {MAX_TABS}</strong>
+          WÃ¤hle bis zu <strong>{MAX_TABS}</strong> Tabs fÃ¼r deine Schnelleiste.
+          Aktuell ausgewÃ¤hlt: <strong>{selected.length} / {MAX_TABS}</strong>
         </p>
-        {/* Vorschau — simuliert die weiße Schnelleiste */}
+        {/* Vorschau â€” simuliert die weiÃŸe Schnelleiste */}
         <div style={{ marginBottom: "var(--s-2)", fontSize: "var(--text-xs)", color: "var(--c-text-3)", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.06em" }}>Vorschau</div>
         <div style={{
           display: "flex", justifyContent: "space-around", alignItems: "center",
@@ -151,7 +150,7 @@ const INTEGRATION_LABELS = {
   facebook_ads:     "Facebook Ads",
 };
 
-// ── Sub-pages ─────────────────────────────────────────────────────────────────
+// â”€â”€ Sub-pages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function KontoTab({ user, authHeader, logout }) {
   const toast = useToast();
@@ -171,7 +170,7 @@ function KontoTab({ user, authHeader, logout }) {
   const [deleting, setDeleting] = useState(false);
 
   async function handleEraseAccount() {
-    if (deleteConfirm !== "KONTO LÖSCHEN" || !deletePassword) return;
+    if (deleteConfirm !== "KONTO LÃ–SCHEN" || !deletePassword) return;
     setDeleting(true);
     try {
       const res = await fetch("/api/auth/erase-account", {
@@ -181,10 +180,10 @@ function KontoTab({ user, authHeader, logout }) {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        toast.error(err.detail || "Fehler beim Löschen des Kontos.");
+        toast.error(err.detail || "Fehler beim LÃ¶schen des Kontos.");
         return;
       }
-      toast.success("Konto erfolgreich gelöscht. Du wirst abgemeldet.");
+      toast.success("Konto erfolgreich gelÃ¶scht. Du wirst abgemeldet.");
       setTimeout(() => logout(), 1500);
     } catch {
       toast.error("Netzwerkfehler. Bitte erneut versuchen.");
@@ -211,7 +210,7 @@ function KontoTab({ user, authHeader, logout }) {
   }
 
   async function changePassword() {
-    if (newPw !== confirmPw) { toast.error("Passwörter stimmen nicht überein."); return; }
+    if (newPw !== confirmPw) { toast.error("PasswÃ¶rter stimmen nicht Ã¼berein."); return; }
     if (newPw.length < 8) { toast.error("Mindestens 8 Zeichen."); return; }
     setPwSaving(true);
     try {
@@ -221,10 +220,10 @@ function KontoTab({ user, authHeader, logout }) {
         body: JSON.stringify({ old_password: oldPw, new_password: newPw }),
       });
       if (!res.ok) throw new Error();
-      toast.success("Passwort geändert.");
+      toast.success("Passwort geÃ¤ndert.");
       setOldPw(""); setNewPw(""); setConfirmPw("");
     } catch {
-      toast.error("Passwortänderung fehlgeschlagen.");
+      toast.error("PasswortÃ¤nderung fehlgeschlagen.");
     } finally {
       setPwSaving(false);
     }
@@ -246,14 +245,14 @@ function KontoTab({ user, authHeader, logout }) {
             <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@beispiel.de" />
           </div>
           <button className="btn btn-primary btn-md" onClick={saveProfile} disabled={saving} style={{ alignSelf: "flex-start" }}>
-            {saving ? "Speichern…" : "Speichern"}
+            {saving ? "Speichernâ€¦" : "Speichern"}
           </button>
         </div>
       </div>
 
       {/* Password */}
       <div className="card" style={{ padding: "var(--s-6)" }}>
-        <div className="section-title" style={{ marginBottom: "var(--s-5)" }}>Passwort ändern</div>
+        <div className="section-title" style={{ marginBottom: "var(--s-5)" }}>Passwort Ã¤ndern</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}>
           <div className="form-group">
             <label className="form-label">Aktuelles Passwort</label>
@@ -264,11 +263,11 @@ function KontoTab({ user, authHeader, logout }) {
             <input className="input" type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} />
           </div>
           <div className="form-group">
-            <label className="form-label">Passwort bestätigen</label>
+            <label className="form-label">Passwort bestÃ¤tigen</label>
             <input className="input" type="password" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} />
           </div>
           <button className="btn btn-primary btn-md" onClick={changePassword} disabled={pwSaving || !oldPw || !newPw || !confirmPw} style={{ alignSelf: "flex-start" }}>
-            {pwSaving ? "Ändern…" : "Passwort ändern"}
+            {pwSaving ? "Ã„ndernâ€¦" : "Passwort Ã¤ndern"}
           </button>
         </div>
       </div>
@@ -285,25 +284,25 @@ function KontoTab({ user, authHeader, logout }) {
       {/* GDPR / Danger zone */}
       <div className="card" style={{ padding: "var(--s-6)", borderLeft: "3px solid var(--c-danger)" }}>
         <div className="section-title" style={{ marginBottom: "var(--s-2)", color: "var(--c-danger)" }}>
-          Datenschutz & Kontolöschung (DSGVO Art. 17)
+          Datenschutz & KontolÃ¶schung (DSGVO Art. 17)
         </div>
         <p style={{ fontSize: "var(--text-sm)", color: "var(--c-text-3)", marginBottom: "var(--s-4)", lineHeight: 1.6 }}>
-          Gemäß DSGVO Art. 17 hast du das Recht auf Löschung deiner personenbezogenen Daten.
-          Das Anonymisieren deines Kontos ist <strong>permanent und kann nicht rückgängig gemacht werden</strong>.
-          Alle persönlichen Daten (Name, E-Mail, Unternehmen) werden unwiderruflich gelöscht.
+          GemÃ¤ÃŸ DSGVO Art. 17 hast du das Recht auf LÃ¶schung deiner personenbezogenen Daten.
+          Das Anonymisieren deines Kontos ist <strong>permanent und kann nicht rÃ¼ckgÃ¤ngig gemacht werden</strong>.
+          Alle persÃ¶nlichen Daten (Name, E-Mail, Unternehmen) werden unwiderruflich gelÃ¶scht.
         </p>
         {!showDelete ? (
           <button className="btn btn-danger btn-sm" onClick={() => setShowDelete(true)}>
-            Konto löschen (DSGVO Art. 17)
+            Konto lÃ¶schen (DSGVO Art. 17)
           </button>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
             <p style={{ fontSize: "var(--text-sm)", color: "var(--c-danger)", fontWeight: 600 }}>
-              ⚠️ Diese Aktion ist nicht rückgängig zu machen.
+              âš ï¸ Diese Aktion ist nicht rÃ¼ckgÃ¤ngig zu machen.
             </p>
             <div>
               <label style={{ fontSize: "var(--text-xs)", fontWeight: 600, color: "var(--c-text-3)", display: "block", marginBottom: 4 }}>
-                Aktuelles Passwort zur Bestätigung
+                Aktuelles Passwort zur BestÃ¤tigung
               </label>
               <input
                 className="input"
@@ -315,13 +314,13 @@ function KontoTab({ user, authHeader, logout }) {
             </div>
             <div>
               <label style={{ fontSize: "var(--text-xs)", fontWeight: 600, color: "var(--c-text-3)", display: "block", marginBottom: 4 }}>
-                Tippe <strong>KONTO LÖSCHEN</strong> zur Bestätigung
+                Tippe <strong>KONTO LÃ–SCHEN</strong> zur BestÃ¤tigung
               </label>
               <input
                 className="input"
                 value={deleteConfirm}
                 onChange={e => setDeleteConfirm(e.target.value)}
-                placeholder="KONTO LÖSCHEN"
+                placeholder="KONTO LÃ–SCHEN"
               />
             </div>
             <div style={{ display: "flex", gap: "var(--s-3)" }}>
@@ -331,178 +330,12 @@ function KontoTab({ user, authHeader, logout }) {
               >Abbrechen</button>
               <button
                 className="btn btn-danger btn-sm"
-                disabled={deleteConfirm !== "KONTO LÖSCHEN" || !deletePassword || deleting}
+                disabled={deleteConfirm !== "KONTO LÃ–SCHEN" || !deletePassword || deleting}
                 onClick={handleEraseAccount}
               >
-                {deleting ? "Wird gelöscht..." : "Endgültig löschen"}
+                {deleting ? "Wird gelÃ¶scht..." : "EndgÃ¼ltig lÃ¶schen"}
               </button>
             </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TeamTab({ authHeader }) {
-  const toast = useToast();
-  const [members, setMembers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("member");
-  const [inviting, setInviting] = useState(false);
-  const [removingId, setRemovingId] = useState(null);
-
-  function buildAuthHeaders({ includeWorkspace = true } = {}) {
-    const headers = { ...authHeader() };
-    if (!includeWorkspace) {
-      delete headers["X-Workspace-ID"];
-    }
-    return headers;
-  }
-
-  async function fetchWithWorkspaceFallback(url, options = {}) {
-    const firstHeaders = { ...buildAuthHeaders(), ...(options.headers || {}) };
-    let response = await fetch(url, { ...options, headers: firstHeaders });
-
-    if (!response.ok && firstHeaders["X-Workspace-ID"]) {
-      const fallbackHeaders = { ...buildAuthHeaders({ includeWorkspace: false }), ...(options.headers || {}) };
-      response = await fetch(url, { ...options, headers: fallbackHeaders });
-    }
-
-    return response;
-  }
-
-  const fetchMembers = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetchWithWorkspaceFallback("/api/team/members");
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setMembers(Array.isArray(data) ? data : data.members ?? []);
-    } catch {
-      toast.error("Team konnte nicht geladen werden.");
-    } finally {
-      setLoading(false);
-    }
-  }, [authHeader, toast]);
-
-  useEffect(() => { fetchMembers(); }, [fetchMembers]);
-
-  async function inviteMember() {
-    if (!inviteEmail) return;
-    setInviting(true);
-    try {
-      const res = await fetchWithWorkspaceFallback("/api/team/invite", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success(`Einladung an ${inviteEmail} gesendet.`);
-      setInviteEmail("");
-      fetchMembers();
-    } catch {
-      toast.error("Einladung fehlgeschlagen.");
-    } finally {
-      setInviting(false);
-    }
-  }
-
-  async function removeMember(id) {
-    setRemovingId(id);
-    try {
-      const res = await fetchWithWorkspaceFallback(`/api/team/members/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error();
-      toast.success("Mitglied entfernt.");
-      setMembers((prev) => prev.filter((m) => m.id !== id));
-    } catch {
-      toast.error("Entfernen fehlgeschlagen.");
-    } finally {
-      setRemovingId(null);
-    }
-  }
-
-  const ROLE_LABELS = { admin: "Admin", manager: "Manager", member: "Mitglied", owner: "Inhaber" };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)" }}>
-      <div className="card" style={{ padding: "var(--s-6)" }}>
-        <div className="section-title" style={{ marginBottom: "var(--s-4)" }}>Mitglied einladen</div>
-        <div className="flex gap-3">
-          <input
-            className="input" type="email" value={inviteEmail}
-            onChange={(e) => setInviteEmail(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && inviteMember()}
-            placeholder="name@beispiel.de" style={{ flex: 1 }}
-          />
-          <select className="input" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} style={{ maxWidth: 140 }}>
-            <option value="member">Mitglied</option>
-            <option value="manager">Manager</option>
-            <option value="admin">Admin</option>
-          </select>
-          <button className="btn btn-primary btn-md" onClick={inviteMember} disabled={!inviteEmail || inviting}>
-            {inviting ? "Sende…" : "Einladen"}
-          </button>
-        </div>
-      </div>
-
-      <div className="card" style={{ padding: "var(--s-6)" }}>
-        <div className="section-title" style={{ marginBottom: "var(--s-4)" }}>Teammitglieder</div>
-        {loading ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="flex items-center gap-3">
-                <div className="skeleton" style={{ width: 36, height: 36, borderRadius: "50%" }} />
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "var(--s-1)" }}>
-                  <div className="skeleton skeleton-text" style={{ width: "40%" }} />
-                  <div className="skeleton skeleton-text" style={{ width: "60%" }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : members.length === 0 ? (
-          <div className="empty-state" style={{ padding: "var(--s-8) 0" }}>
-            <div className="empty-icon">👥</div>
-            <div className="empty-title">Noch keine Mitglieder</div>
-            <div className="empty-text">Lade dein Team ein um zusammenzuarbeiten.</div>
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {members.map((m, idx) => (
-              <div key={m.id ?? idx}>
-                {idx > 0 && <div className="divider" />}
-                <div className="flex items-center gap-3" style={{ padding: "var(--s-3) 0" }}>
-                  <div style={{
-                    width: 36, height: 36, borderRadius: "50%",
-                    background: "var(--c-primary-light)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: "var(--text-md)", fontWeight: 600, color: "var(--c-primary)", flexShrink: 0,
-                  }}>
-                    {(m.name ?? m.email ?? "?")[0].toUpperCase()}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--c-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {m.name ?? m.email}
-                    </div>
-                    {m.name && (
-                      <div style={{ fontSize: "var(--text-xs)", color: "var(--c-text-3)" }}>{m.email}</div>
-                    )}
-                  </div>
-                  <span className="badge badge-sm badge-neutral">{ROLE_LABELS[m.role] ?? m.role ?? "Mitglied"}</span>
-                  {m.role !== "owner" && (
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      style={{ color: "var(--c-danger)", padding: "4px 8px" }}
-                      disabled={removingId === m.id}
-                      onClick={() => removeMember(m.id)}
-                    >
-                      {removingId === m.id ? "…" : "Entfernen"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
           </div>
         )}
       </div>
@@ -543,7 +376,7 @@ function DatenquellenTab({ authHeader }) {
       setConnections((prev) => prev.map((c) => (c.id === id ? { ...c, enabled: !enabled } : c)));
       toast.success(!enabled ? "Verbindung aktiviert." : "Verbindung deaktiviert.");
     } catch {
-      toast.error("Änderung fehlgeschlagen.");
+      toast.error("Ã„nderung fehlgeschlagen.");
     } finally {
       setTogglingId(null);
     }
@@ -557,8 +390,8 @@ function DatenquellenTab({ authHeader }) {
   };
 
   const ICONS = {
-    google_analytics: "📊", shopify: "🛍️", woocommerce: "🛒",
-    stripe: "💳", klaviyo: "📧", facebook_ads: "📣",
+    google_analytics: "ðŸ“Š", shopify: "ðŸ›ï¸", woocommerce: "ðŸ›’",
+    stripe: "ðŸ’³", klaviyo: "ðŸ“§", facebook_ads: "ðŸ“£",
   };
 
   return (
@@ -579,7 +412,7 @@ function DatenquellenTab({ authHeader }) {
           </div>
         ) : connections.length === 0 ? (
           <div className="empty-state" style={{ padding: "var(--s-8) 0" }}>
-            <div className="empty-icon">🔌</div>
+            <div className="empty-icon">ðŸ”Œ</div>
             <div className="empty-title">Keine Datenquellen</div>
             <div className="empty-text">Verbinde eine Datenquelle um mit der Analyse zu starten.</div>
           </div>
@@ -597,7 +430,7 @@ function DatenquellenTab({ authHeader }) {
                       display: "flex", alignItems: "center", justifyContent: "center",
                       fontSize: 20, flexShrink: 0,
                     }}>
-                      {ICONS[c.type] ?? "🔗"}
+                      {ICONS[c.type] ?? "ðŸ”—"}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--c-text)" }}>
@@ -624,11 +457,11 @@ function DatenquellenTab({ authHeader }) {
 
       <div className="card" style={{ padding: "var(--s-5)", borderLeft: "3px solid var(--c-primary)" }}>
         <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--c-primary)", marginBottom: "var(--s-2)" }}>
-          Neue Integration hinzufügen
+          Neue Integration hinzufÃ¼gen
         </div>
         <p style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.65 }}>
-          Weitere Integrationen können über den INTLYST Partner-Connector eingerichtet werden.
-          Kontaktiere <span style={{ color: "var(--c-primary)" }}>support@intlyst.com</span> für individuelle Anbindungen.
+          Weitere Integrationen kÃ¶nnen Ã¼ber den INTLYST Partner-Connector eingerichtet werden.
+          Kontaktiere <span style={{ color: "var(--c-primary)" }}>support@intlyst.com</span> fÃ¼r individuelle Anbindungen.
         </p>
       </div>
     </div>
@@ -643,11 +476,11 @@ function BenachrichtigungenTab({ authHeader }) {
 
   const EMAIL_ITEMS = [
     { key: "alerts",          label: "Kritische Alerts",          sub: "Sofort bei neuen kritischen Ereignissen" },
-    { key: "goals",           label: "Ziel-Fortschritt",          sub: "Wenn Ziele erreicht oder gefährdet sind" },
+    { key: "goals",           label: "Ziel-Fortschritt",          sub: "Wenn Ziele erreicht oder gefÃ¤hrdet sind" },
     { key: "recommendations", label: "Empfehlungen",              sub: "Neue KI-Handlungsempfehlungen" },
-    { key: "anomalies",       label: "Anomalie-Erkennung",        sub: "Ungewöhnliche Datenmuster" },
-    { key: "weekly_summary",  label: "Wöchentliche Zusammenfassung", sub: "Jeden Montag um 07:00 Uhr" },
-    { key: "reports",         label: "Tägliche Reports",          sub: "Täglich um 07:00 Uhr" },
+    { key: "anomalies",       label: "Anomalie-Erkennung",        sub: "UngewÃ¶hnliche Datenmuster" },
+    { key: "weekly_summary",  label: "WÃ¶chentliche Zusammenfassung", sub: "Jeden Montag um 07:00 Uhr" },
+    { key: "reports",         label: "TÃ¤gliche Reports",          sub: "TÃ¤glich um 07:00 Uhr" },
   ];
 
   useEffect(() => {
@@ -680,7 +513,7 @@ function BenachrichtigungenTab({ authHeader }) {
   }
 
   if (loading || !prefs) {
-    return <div className="card" style={{ padding: "var(--s-6)", color: "var(--c-text-3)", fontSize: "var(--text-sm)" }}>Wird geladen…</div>;
+    return <div className="card" style={{ padding: "var(--s-6)", color: "var(--c-text-3)", fontSize: "var(--text-sm)" }}>Wird geladenâ€¦</div>;
   }
 
   return (
@@ -726,7 +559,7 @@ function BenachrichtigungenTab({ authHeader }) {
 
       <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center" }}>
         <button className="btn btn-primary btn-md" onClick={savePrefs} disabled={saving}>
-          {saving ? "Speichern…" : "Einstellungen speichern"}
+          {saving ? "Speichernâ€¦" : "Einstellungen speichern"}
         </button>
         <span style={{ fontSize: "var(--text-xs)", color: "var(--c-text-3)" }}>
           E-Mails werden an deine Konto-E-Mail-Adresse gesendet.
@@ -740,24 +573,24 @@ function SpracheTab() {
   const { language, setLanguage, t } = useLanguage();
 
   const languages = [
-    { code: 'de', name: 'Deutsch',    flag: '🇩🇪' },
-    { code: 'en', name: 'English',    flag: '🇬🇧' },
-    { code: 'es', name: 'Español',    flag: '🇪🇸' },
-    { code: 'fr', name: 'Français',   flag: '🇫🇷' },
-    { code: 'it', name: 'Italiano',   flag: '🇮🇹' },
-    { code: 'pt', name: 'Português',  flag: '🇵🇹' },
-    { code: 'zh', name: '中文',        flag: '🇨🇳' },
-    { code: 'ru', name: 'Русский',    flag: '🇷🇺' },
+    { code: 'de', name: 'Deutsch',    flag: 'ðŸ‡©ðŸ‡ª' },
+    { code: 'en', name: 'English',    flag: 'ðŸ‡¬ðŸ‡§' },
+    { code: 'es', name: 'EspaÃ±ol',    flag: 'ðŸ‡ªðŸ‡¸' },
+    { code: 'fr', name: 'FranÃ§ais',   flag: 'ðŸ‡«ðŸ‡·' },
+    { code: 'it', name: 'Italiano',   flag: 'ðŸ‡®ðŸ‡¹' },
+    { code: 'pt', name: 'PortuguÃªs',  flag: 'ðŸ‡µðŸ‡¹' },
+    { code: 'zh', name: 'ä¸­æ–‡',        flag: 'ðŸ‡¨ðŸ‡³' },
+    { code: 'ru', name: 'Ð ÑƒÑÑÐºÐ¸Ð¹',    flag: 'ðŸ‡·ðŸ‡º' },
   ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)" }}>
       <div>
         <h3 style={{ fontSize: "var(--text-lg)", fontWeight: 600, marginBottom: "var(--s-2)", color: "var(--c-text)" }}>
-          Sprache wählen
+          Sprache wÃ¤hlen
         </h3>
         <p style={{ fontSize: "var(--text-sm)", color: "var(--c-text-3)", marginBottom: "var(--s-4)" }}>
-          Wähle deine bevorzugte Sprache für die Benutzeroberfläche.
+          WÃ¤hle deine bevorzugte Sprache fÃ¼r die BenutzeroberflÃ¤che.
         </p>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "var(--s-3)" }}>
@@ -783,7 +616,7 @@ function SpracheTab() {
                 {lang.name}
               </span>
               {language === lang.code && (
-                <span style={{ fontSize: "12px", color: "#000", fontWeight: 700 }}>✓ Aktiv</span>
+                <span style={{ fontSize: "12px", color: "#000", fontWeight: 700 }}>âœ“ Aktiv</span>
               )}
             </button>
           ))}
@@ -792,10 +625,10 @@ function SpracheTab() {
 
       <div style={{ paddingTop: "var(--s-3)", borderTop: "1px solid var(--c-border)" }}>
         <h4 style={{ fontSize: "var(--text-sm)", fontWeight: 600, marginBottom: "var(--s-2)", color: "var(--c-text)" }}>
-          Sprachpräferenzen
+          SprachprÃ¤ferenzen
         </h4>
         <p style={{ fontSize: "var(--text-xs)", color: "var(--c-text-3)" }}>
-          Deine Spracheinstellung wird automatisch gespeichert und beim nächsten Login wiederhergestellt.
+          Deine Spracheinstellung wird automatisch gespeichert und beim nÃ¤chsten Login wiederhergestellt.
         </p>
       </div>
     </div>
@@ -803,10 +636,10 @@ function SpracheTab() {
 }
 
 const PLAN_DEFINITIONS = [
-  { key: "trial",         label: "Trial",         price: "0 €",   per: "/ Monat", color: "#888",    features: ["Dashboard & KPIs", "Tasks (nur lesen)", "Einstellungen"],                                                               lockedRoutes: ["/analyse","/wachstum","/kunden","/standort","/market","/abtests","/alerts","/reports"] },
-  { key: "standard",      label: "Standard",      price: "29 €",  per: "/ Monat", color: "#000",    features: ["Dashboard & KPIs", "Tasks & Ziele", "Alerts", "Reports", "5 Integrationen"],                                           lockedRoutes: ["/analyse","/wachstum","/kunden","/standort","/market","/abtests"] },
-  { key: "team_standard", label: "Team Standard", price: "79 €",  per: "/ Monat", color: "#0071E3", features: ["Alles in Standard", "Analyse & Wachstum", "Kunden & Standort", "Markt & Trends", "5 Team-Mitglieder"], highlighted: true, lockedRoutes: ["/abtests"] },
-  { key: "team_pro",      label: "Team Pro",      price: "129 €", per: "/ Monat", color: "#AF52DE", features: ["Alles in Team Standard", "A/B Tests", "Alle Integrationen", "Unbegrenzte Mitglieder", "Priority Support"],             lockedRoutes: [] },
+  { key: "trial",         label: "Trial",         price: "0 â‚¬",   per: "/ Monat", color: "#888",    features: ["Dashboard & KPIs", "Tasks (nur lesen)", "Einstellungen"],                                                               lockedRoutes: ["/analyse","/wachstum","/kunden","/standort","/market","/alerts","/reports"] },
+  { key: "standard",      label: "Standard",      price: "29 â‚¬",  per: "/ Monat", color: "#000",    features: ["Dashboard & KPIs", "Tasks & Ziele", "Alerts", "Reports", "5 Integrationen"],                                           lockedRoutes: ["/analyse","/wachstum","/kunden","/standort","/market"] },
+  { key: "team_standard", label: "Team Standard", price: "79 â‚¬",  per: "/ Monat", color: "#0071E3", features: ["Alles in Standard", "Analyse & Wachstum", "Kunden & Standort", "Markt & Trends", "5 Team-Mitglieder"], highlighted: true, lockedRoutes: [] },
+  { key: "team_pro",      label: "Team Pro",      price: "129 â‚¬", per: "/ Monat", color: "#AF52DE", features: ["Alles in Team Standard", "Alle Integrationen", "Unbegrenzte Mitglieder", "Priority Support"],             lockedRoutes: [] },
 ];
 
 const TAB_ALIASES = {
@@ -878,7 +711,7 @@ function AbonnementTab({ authHeader }) {
         )}
         {currentDef && currentDef.lockedRoutes.length > 0 && (
           <div style={{ marginTop: "var(--s-3)", fontSize: "var(--text-xs)", color: "var(--c-text-3)" }}>
-            🔒 Gesperrt: {currentDef.lockedRoutes.map(r => r.replace("/","")).join(", ")}
+            ðŸ”’ Gesperrt: {currentDef.lockedRoutes.map(r => r.replace("/","")).join(", ")}
           </div>
         )}
       </div>
@@ -890,7 +723,7 @@ function AbonnementTab({ authHeader }) {
           const isLoading  = switching === p.key;
           const currentIdx = PLAN_DEFINITIONS.findIndex(x => x.key === plan);
           const targetIdx  = PLAN_DEFINITIONS.findIndex(x => x.key === p.key);
-          const btnLabel   = isLoading ? "Wechsle…" : targetIdx > currentIdx ? "Upgraden" : "Downgraden";
+          const btnLabel   = isLoading ? "Wechsleâ€¦" : targetIdx > currentIdx ? "Upgraden" : "Downgraden";
           return (
             <div key={p.key} className="card" style={{ padding: "var(--s-5)", borderTop: p.highlighted ? `3px solid ${p.color}` : undefined, outline: isCurrent ? `2px solid ${p.color}` : undefined }}>
               {p.highlighted && <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: p.color, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "var(--s-2)" }}>Beliebteste Wahl</div>}
@@ -902,12 +735,12 @@ function AbonnementTab({ authHeader }) {
               <ul style={{ listStyle: "none", padding: 0, margin: "0 0 var(--s-5) 0", display: "flex", flexDirection: "column", gap: "var(--s-2)" }}>
                 {p.features.map(f => (
                   <li key={f} style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", display: "flex", alignItems: "flex-start", gap: "var(--s-2)" }}>
-                    <span style={{ color: "var(--c-success)", fontWeight: 700, flexShrink: 0 }}>✓</span>{f}
+                    <span style={{ color: "var(--c-success)", fontWeight: 700, flexShrink: 0 }}>âœ“</span>{f}
                   </li>
                 ))}
               </ul>
               {isCurrent ? (
-                <div style={{ textAlign: "center", padding: "8px 0", fontSize: "var(--text-sm)", color: p.color, fontWeight: 600, border: `1.5px solid ${p.color}`, borderRadius: "var(--r-sm)" }}>✓ Aktiver Plan</div>
+                <div style={{ textAlign: "center", padding: "8px 0", fontSize: "var(--text-sm)", color: p.color, fontWeight: 600, border: `1.5px solid ${p.color}`, borderRadius: "var(--r-sm)" }}>âœ“ Aktiver Plan</div>
               ) : (
                 <button onClick={() => handleSwitch(p.key)} disabled={!!switching}
                   style={{ width: "100%", padding: "8px 0", borderRadius: "var(--r-sm)", background: p.highlighted ? p.color : "transparent", color: p.highlighted ? "#fff" : "var(--c-text)", border: `1.5px solid ${p.highlighted ? p.color : "var(--c-border-2)"}`, fontWeight: 600, fontSize: "var(--text-sm)", cursor: switching ? "wait" : "pointer", opacity: switching && !isLoading ? 0.5 : 1 }}>
@@ -953,7 +786,7 @@ function GovernanceTab({ authHeader }) {
   }
 
   if (!policy) {
-    return <div className="card" style={{ padding: "var(--s-6)", color: "var(--c-text-3)" }}>Governance lädt…</div>;
+    return <div className="card" style={{ padding: "var(--s-6)", color: "var(--c-text-3)" }}>Governance lÃ¤dtâ€¦</div>;
   }
 
   function update(key, value) {
@@ -979,21 +812,21 @@ function GovernanceTab({ authHeader }) {
         <div className="section-title" style={{ marginBottom: "var(--s-4)" }}>Execution Defaults</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}>
           <label className="flex items-center gap-3"><input type="checkbox" checked={!!policy.require_dual_review} onChange={(e) => update("require_dual_review", e.target.checked)} /> Dual Review bei kritischen Aktionen verlangen</label>
-          <label className="flex items-center gap-3"><input type="checkbox" checked={!!policy.auto_execute_on_approval} onChange={(e) => update("auto_execute_on_approval", e.target.checked)} /> Nach Freigabe automatisch ausführen</label>
+          <label className="flex items-center gap-3"><input type="checkbox" checked={!!policy.auto_execute_on_approval} onChange={(e) => update("auto_execute_on_approval", e.target.checked)} /> Nach Freigabe automatisch ausfÃ¼hren</label>
         </div>
       </div>
 
       <div>
-        <button className="btn btn-primary btn-md" onClick={save} disabled={saving}>{saving ? "Speichern…" : "Governance speichern"}</button>
+        <button className="btn btn-primary btn-md" onClick={save} disabled={saving}>{saving ? "Speichernâ€¦" : "Governance speichern"}</button>
       </div>
     </div>
   );
 }
 
-// ── Main Settings ─────────────────────────────────────────────────────────────
+// â”€â”€ Main Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function Settings() {
-  const { user, authHeader, logout } = useAuth();
+  const { user, authHeader, logout, refreshSession, token, loading } = useAuth();
   const { t } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -1004,12 +837,11 @@ export default function Settings() {
   const TABS_DYNAMIC = [
     { key: "personalisierung",    label: "Personalisierung"       },
     { key: "konto",               label: t('account')             },
-    { key: "team",                label: t('team')                },
     { key: "benachrichtigungen",  label: t('notifications')       },
     { key: "sprache",             label: t('language')            },
     { key: "abonnement",          label: t('subscription')        },
     { key: "governance",          label: "Governance"             },
-    { key: "referral",            label: "🎁 Freunde einladen"    },
+    { key: "referral",            label: "ðŸŽ Freunde einladen"    },
   ];
   const validTabKeys = TABS_DYNAMIC.map((tab) => tab.key);
 
@@ -1061,7 +893,7 @@ export default function Settings() {
     >
       <div style={{ marginBottom: "var(--s-6)" }}>
         <div className="page-title">Einstellungen</div>
-        <div className="page-subtitle">Verwalte dein Konto und deine Präferenzen</div>
+        <div className="page-subtitle">Verwalte dein Konto und deine PrÃ¤ferenzen</div>
       </div>
 
       <div className="tabs-underline" style={{ marginBottom: "var(--s-6)" }}>
@@ -1137,12 +969,12 @@ export default function Settings() {
                   Onboarding & Tutorials
                 </h3>
                 <p style={{ fontSize: "var(--text-sm)", color: "var(--c-text-3)", margin: 0 }}>
-                  Starte die geführte Tour erneut oder rufe einzelne Module ab.
+                  Starte die gefÃ¼hrte Tour erneut oder rufe einzelne Module ab.
                 </p>
               </div>
               <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
                 <button className="btn btn-secondary btn-sm" onClick={restartTour}>Tour neu starten</button>
-                <button className="btn btn-ghost btn-sm" onClick={resetTips}>Hinweise zurücksetzen</button>
+                <button className="btn btn-ghost btn-sm" onClick={resetTips}>Hinweise zurÃ¼cksetzen</button>
               </div>
               <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
                 <button className="btn btn-ghost btn-sm" onClick={() => navigate("/")}>KPI-Guide</button>
@@ -1163,7 +995,6 @@ export default function Settings() {
           </div>
         )}
         {activeTab === "konto"              && <KontoTab user={user} authHeader={authHeader} logout={logout} />}
-        {activeTab === "team"               && <TeamTab authHeader={authHeader} />}
         {activeTab === "benachrichtigungen" && <BenachrichtigungenTab authHeader={authHeader} />}
         {activeTab === "sprache"            && <SpracheTab />}
         {activeTab === "abonnement"         && <AbonnementTab authHeader={authHeader} />}
@@ -1181,3 +1012,4 @@ export default function Settings() {
     </div>
   );
 }
+

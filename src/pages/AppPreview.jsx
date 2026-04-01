@@ -10,12 +10,12 @@ const METRICS = [
 const RECOMMENDATIONS = [
   { title: "Checkout-Friction reduzieren", impact: "Hoch", effort: "Mittel", eta: "7 Tage" },
   { title: "Segmente im E-Mail-Funnel trennen", impact: "Mittel", effort: "Niedrig", eta: "3 Tage" },
-  { title: "Top-Landingpage mit A/B-Test optimieren", impact: "Hoch", effort: "Mittel", eta: "10 Tage" },
+  { title: "Top-Landingpage mit Experiment optimieren", impact: "Hoch", effort: "Mittel", eta: "10 Tage" },
 ];
 
 const ACTIONS = [
   { text: "Kampagne Spring Push aktiviert", category: "Marketing", when: "vor 2h" },
-  { text: "A/B Test Variant B als Gewinner markiert", category: "Produkt", when: "vor 5h" },
+  { text: "Experiment Variante B als Gewinner markiert", category: "Produkt", when: "vor 5h" },
   { text: "Retention-Playbook fuer Risk-Segment gestartet", category: "Sales", when: "gestern" },
 ];
 

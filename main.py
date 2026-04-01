@@ -72,7 +72,8 @@ from routers import (
     reports, abtests, cohorts, funnels, custom_kpis, workspaces, ga4,
     events, briefing, instagram, proactive, shopify, stripe, scheduler,
     decision, action_requests, changes, learning, approval_policy,
-    deep_analytics, personalization,
+    deep_analytics, personalization, companies, plans, suggestions,
+    audit_logs, time_blocks, work_schedules, teams,
 )
 
 from api.auth_routes import get_current_user
@@ -83,6 +84,8 @@ from api.user_integrations_routes import router as user_integrations_router
 from api.referral_routes import router as referral_router
 from api.maps_routes import router as maps_router
 from api.action_logs_routes import router as action_logs_router
+from api.audit_routes import router as audit_router
+from api.schedules_routes import router as schedules_router
 
 # Automatisierungs-API einbinden
 from fastapi import Request, Depends
@@ -467,10 +470,17 @@ app.include_router(billing.router)
 app.include_router(analytics_integrations.router)
 app.include_router(auth.router)
 app.include_router(team.router)
+app.include_router(teams.router)
 app.include_router(intlyst.router)
 app.include_router(growth.router)
 app.include_router(reports.router)
 app.include_router(workspaces.router)
+app.include_router(companies.router)
+app.include_router(plans.router)
+app.include_router(suggestions.router)
+app.include_router(audit_logs.router)
+app.include_router(time_blocks.router)
+app.include_router(work_schedules.router)
 app.include_router(abtests.router)
 app.include_router(cohorts.router)
 app.include_router(funnels.router)
@@ -492,6 +502,8 @@ app.include_router(superapp_router)
 app.include_router(error_traces_router)
 app.include_router(user_integrations_router)
 app.include_router(referral_router)
+app.include_router(audit_router)
+app.include_router(schedules_router)
 
 # Dependency Injection für Automatisierungs-API
 def get_automation_dependencies(request: Request):

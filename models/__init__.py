@@ -22,6 +22,14 @@ from models.strategy_cycle import StrategyCycle
 from models.report import Report
 from models.user_event import UserEvent
 from models.user_profile import UserProfile
+from models.company import Company
+from models.team import Team
+from models.team_membership import TeamMembership
+from models.plan import Plan
+from models.time_block import TimeBlock
+from models.work_schedule import WorkSchedule
+from models.suggestion import Suggestion
+from models.audit_log import AuditLog
 
 __all__ = [
     "Base", "DailyMetrics", "ActionLog", "Goal", "Notification", "Task",
@@ -38,4 +46,12 @@ __all__ = [
     "Report",
     "UserEvent",
     "UserProfile",
+    "Company",
+    "Team",
+    "TeamMembership",
+    "Plan",
+    "TimeBlock",
+    "WorkSchedule",
+    "Suggestion",
+    "AuditLog",
 ]
