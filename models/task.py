@@ -1,6 +1,7 @@
 from datetime import date, datetime
 
 from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
 
 from models.base import Base
 
@@ -28,6 +29,14 @@ class Task(Base):
     created_by        = Column(String, nullable=True)
     created_at        = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at        = Column(DateTime, nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Extended fields for Decision Intelligence
+    # source_type: manual|analysis|goal|review|ai_suggestion
+    source_type       = Column(String, nullable=False, default="manual")
+    trigger_reason    = Column(Text, nullable=True)     # Why was this task created?
+    risk_score        = Column(Float, nullable=True, default=0.0)   # 0–100
+    expected_impact   = Column(Text, nullable=True)     # Free-text expected outcome
+    linked_insight_id = Column(Integer, nullable=True)  # FK to insights
+    linked_scenario_id = Column(Integer, nullable=True) # FK to scenarios
 
 
 class TaskHistory(Base):

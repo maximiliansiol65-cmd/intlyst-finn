@@ -16,3 +16,6 @@ class AuditLog(Base):
     entity_id = Column(Integer, nullable=True)
     metadata_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Extended audit fields
+    actor_role = Column(String, nullable=True, index=True)   # workspace role at time of action
+    context_json = Column(Text, nullable=True)               # snapshot of KPIs/tasks/goals at time of action

@@ -112,16 +112,16 @@ export default function Insights() {
     <div
       style={{
         minHeight: "100vh",
-        background: "#0a0a14",
-        color: "#e2e8f0",
+        background: "linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%)",
+        color: "#0f172a",
         fontFamily: "'DM Sans','Segoe UI',sans-serif",
         padding: "28px 32px",
       }}
     >
       <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: "#f1f5f9", margin: 0 }}>Insights</h1>
-        <p style={{ fontSize: 13, color: "#475569", margin: "4px 0 0" }}>
-          Datenbasierte Analyse - KI-Erkenntnisse - Prognosen
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: "#0f172a", margin: 0 }}>Berater-Analyse</h1>
+        <p style={{ fontSize: 14, color: "#475569", margin: "6px 0 0", maxWidth: 840, lineHeight: 1.6 }}>
+          Die App erklaert nicht nur, was in den Daten passiert, sondern wie die Lage zu bewerten ist, was jetzt zu tun ist und welche Folgen das strategisch hat.
         </p>
       </div>
 

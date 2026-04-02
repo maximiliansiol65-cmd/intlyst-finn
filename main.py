@@ -86,6 +86,16 @@ from api.maps_routes import router as maps_router
 from api.action_logs_routes import router as action_logs_router
 from api.audit_routes import router as audit_router
 from api.schedules_routes import router as schedules_router
+from api.insights_routes import router as insights_router
+from api.forecast_records_routes import router as forecast_records_router
+from api.scenarios_routes import router as scenarios_router
+from api.ai_team_routes import router as ai_team_router
+from api.activity_logs_di_routes import router as activity_logs_di_router
+from api.mfa_routes import router as mfa_router
+from api.metrics_routes import router as metrics_router
+from api.drilldown_routes import router as drilldown_router
+from api.backup_routes import router as backup_router
+from api.export_routes import router as export_router
 
 # Automatisierungs-API einbinden
 from fastapi import Request, Depends
@@ -109,6 +119,7 @@ from services.notification_service import (
 )
 from services.strategy_cycle_service import run_background_strategy_cycle_job
 from services.self_learning_service import run_learning_cycle
+from services.kpi_monitor_service import run_kpi_monitor_all_workspaces
 
 _scheduler = AsyncIOScheduler(timezone="Europe/Berlin")
 
@@ -256,7 +267,8 @@ def _persist_trace(
             status_code=status_code,
             context=context,
         )
-        return row.id if hasattr(row, "id") and not isinstance(row.id, type(Base.id)) else None
+        row_id = getattr(row, "id", None)
+        return int(row_id) if isinstance(row_id, int) else None
     except Exception as trace_exc:
         logger.error("ERROR_TRACE_PERSIST_FAILED %s", trace_exc, exc_info=True)
         return None
@@ -277,6 +289,15 @@ def _run_scheduled_learning_cycle():
                 run_learning_cycle(db, workspace_id=wid)
             finally:
                 reset_current_workspace_id(token)
+    finally:
+        db.close()
+
+
+def _run_scheduled_kpi_monitor():
+    """Wrapper mit eigener DB-Session fuer den KPI-Monitor."""
+    db = SessionLocal()
+    try:
+        run_kpi_monitor_all_workspaces(db)
     finally:
         db.close()
 
@@ -421,6 +442,14 @@ async def startup():
         id="auto_strategy_cycle",
         replace_existing=True,
     )
+    _scheduler.add_job(
+        _run_scheduled_kpi_monitor,
+        "cron",
+        hour=7,
+        minute=10,
+        id="kpi_monitor_revenue_drop",
+        replace_existing=True,
+    )
     if _scheduler.state != STATE_RUNNING:
         _scheduler.start()
     security_logger.info("Intlyst v0.28 gestartet")
@@ -504,6 +533,16 @@ app.include_router(user_integrations_router)
 app.include_router(referral_router)
 app.include_router(audit_router)
 app.include_router(schedules_router)
+app.include_router(insights_router)
+app.include_router(forecast_records_router)
+app.include_router(scenarios_router)
+app.include_router(ai_team_router)
+app.include_router(activity_logs_di_router)
+app.include_router(mfa_router)
+app.include_router(metrics_router)
+app.include_router(drilldown_router)
+app.include_router(backup_router)
+app.include_router(export_router)
 
 # Dependency Injection für Automatisierungs-API
 def get_automation_dependencies(request: Request):
@@ -528,10 +567,6 @@ app.include_router(
     tags=["automation"],
     dependencies=[Depends(get_automation_dependencies)]
 )
-
-# Shopify Router aus routers explizit einbinden
-from routers import shopify as shopify_router
-app.include_router(shopify_router.router)
 
 # Optionaler Security-Router (wird eingebunden wenn security-Modul vorhanden)
 try:

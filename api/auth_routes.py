@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from database import engine, get_db, run_lightweight_migrations, set_current_workspace_id
 from models.user import User, Workspace, WorkspaceMembership
 from security_config import is_configured_secret, is_production_environment
+from security_config import get_session_duration_hours
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 logger = logging.getLogger("audit")
@@ -96,6 +97,8 @@ class LoginResponse(BaseModel):
     name: Optional[str]
     onboarding_done: bool
     active_workspace_id: Optional[int] = None
+    mfa_required: bool = False
+    workspace_role: Optional[str] = None
 
 
 class RefreshRequest(BaseModel):
@@ -183,6 +186,12 @@ def create_access_token(user_id: int, email: str, workspace_id: Optional[int] = 
 
 def create_refresh_token(user_id: int) -> str:
     expire = datetime.utcnow() + timedelta(minutes=REFRESH_TOKEN_EXPIRY_MINUTES)
+    payload = {"sub": str(user_id), "exp": expire, "type": "refresh"}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def _create_refresh_token_with_expiry(user_id: int, expiry_minutes: int) -> str:
+    expire = datetime.utcnow() + timedelta(minutes=expiry_minutes)
     payload = {"sub": str(user_id), "exp": expire, "type": "refresh"}
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -392,8 +401,50 @@ def login(
     logger.info("LOGIN_SUCCESS user_id=%s ip=%s", user.id, ip)
 
     workspace_id = _ensure_default_workspace_for_user(db, user)
+
+    # Determine workspace role for MFA check and session duration
+    membership = (
+        db.query(WorkspaceMembership)
+        .filter(
+            WorkspaceMembership.user_id == user.id,
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.is_active == True,  # noqa: E712
+        )
+        .first()
+    )
+    ws_role = membership.role if membership else "member"
+
+    # MFA check for high-privilege roles
+    try:
+        from models.mfa_secret import MfaSecret
+        mfa_row = db.query(MfaSecret).filter(MfaSecret.user_id == user.id).first()
+        mfa_enabled = bool(mfa_row and mfa_row.is_enabled)
+    except Exception:
+        mfa_enabled = False
+
+    from api.role_guards import MFA_REQUIRED_ROLES
+    if mfa_enabled and ws_role in MFA_REQUIRED_ROLES:
+        # Return partial token — frontend must call /api/auth/mfa/confirm next
+        short_token = create_access_token(user.id, user.email, workspace_id=workspace_id)
+        return LoginResponse(
+            access_token=short_token,
+            refresh_token="",
+            user_id=user.id,
+            email=user.email,
+            name=user.name,
+            onboarding_done=user.onboarding_done,
+            active_workspace_id=user.active_workspace_id,
+            mfa_required=True,
+            workspace_role=ws_role,
+        )
+
+    session_hours = get_session_duration_hours(ws_role)
+    refresh_expiry_minutes = session_hours * 60
+
     access_token = create_access_token(user.id, user.email, workspace_id=workspace_id)
-    refresh_token = create_refresh_token(user.id)
+    refresh_token = _create_refresh_token_with_expiry(user.id, refresh_expiry_minutes)
+    user.last_login_at = datetime.utcnow()
+    db.commit()
     return LoginResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -402,6 +453,8 @@ def login(
         name=user.name,
         onboarding_done=user.onboarding_done,
         active_workspace_id=user.active_workspace_id,
+        mfa_required=False,
+        workspace_role=ws_role,
     )
 
 

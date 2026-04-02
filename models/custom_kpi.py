@@ -40,6 +40,15 @@ class CustomKPI(Base):
     sort_order      = Column(Integer,     default=0)
     created_at      = Column(DateTime,    default=datetime.utcnow)
     updated_at      = Column(DateTime,    default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Extended fields for Decision Intelligence
+    # category: revenue|marketing|operations|sales|finance|customer
+    category        = Column(String(30),  nullable=True, default="revenue")
+    # priority_status: critical|high|medium|low
+    priority_status = Column(String(20),  nullable=True, default="medium")
+    role_visibility = Column(Text,        nullable=True)  # JSON array of roles, e.g. ["ceo","cfo"]
+    threshold_warning  = Column(Float,    nullable=True)  # Soft threshold for warning
+    threshold_critical = Column(Float,    nullable=True)  # Hard threshold for critical alert
+    workspace_id    = Column(Integer,     nullable=False, default=1, index=True)
 
     __table_args__ = (
         Index("ix_custom_kpis_active", "is_active"),

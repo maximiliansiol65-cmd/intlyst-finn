@@ -26,6 +26,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 _WORKSPACE_SCOPED_TABLES = {
     "daily_metrics",
     "goals",
+    "goal_reviews",
     "notifications",
     "tasks",
     "task_history",
@@ -47,6 +48,16 @@ _WORKSPACE_SCOPED_TABLES = {
     "decision_problems",
     "strategy_cycles",
     "recommendation_policies",
+    # Decision Intelligence
+    "kpi_data_points",
+    "insights",
+    "forecast_records",
+    "scenarios",
+    "locations",
+    "ai_agents",
+    "ai_outputs",
+    "activity_logs",
+    "custom_kpis",
 }
 
 _current_workspace_id: ContextVar[int | None] = ContextVar("current_workspace_id", default=None)
@@ -133,7 +144,53 @@ def run_lightweight_migrations() -> None:
     # SQLite-only lightweight schema evolution for workspace tenancy.
     with engine.begin() as conn:
         for table, column, ddl in [
+            # Core workspace migrations
             ("users", "active_workspace_id", "INTEGER"),
+            # Extended user fields
+            ("users", "team_id", "INTEGER"),
+            ("users", "visibility_level", "VARCHAR(20) DEFAULT 'full'"),
+            ("users", "onboarding_status", "VARCHAR(20) DEFAULT 'pending'"),
+            ("users", "activity_status", "VARCHAR(20) DEFAULT 'active'"),
+            ("users", "last_login_at", "DATETIME"),
+            ("users", "preferred_view", "VARCHAR(30)"),
+            # Extended company fields
+            ("companies", "industry", "VARCHAR(100)"),
+            ("companies", "company_size", "VARCHAR(30)"),
+            ("companies", "region", "VARCHAR(100)"),
+            ("companies", "country", "VARCHAR(100)"),
+            ("companies", "growth_type", "VARCHAR(30)"),
+            ("companies", "team_structure", "TEXT"),
+            ("companies", "primary_goal", "VARCHAR(300)"),
+            ("companies", "status", "VARCHAR(20) DEFAULT 'active'"),
+            ("companies", "is_active", "BOOLEAN DEFAULT 1"),
+            ("companies", "plan_tier", "VARCHAR(20) DEFAULT 'free'"),
+            # Extended goal fields
+            ("goals", "title", "VARCHAR(500)"),
+            ("goals", "description", "TEXT"),
+            ("goals", "goal_type", "VARCHAR(30) DEFAULT 'monthly'"),
+            ("goals", "linked_kpi_ids", "TEXT"),
+            ("goals", "current_value", "FLOAT"),
+            ("goals", "progress_pct", "FLOAT DEFAULT 0"),
+            ("goals", "priority", "VARCHAR(20) DEFAULT 'medium'"),
+            ("goals", "status", "VARCHAR(30) DEFAULT 'on_track'"),
+            ("goals", "responsible_role", "VARCHAR(50)"),
+            ("goals", "last_review_at", "DATETIME"),
+            ("goals", "next_review_at", "DATETIME"),
+            ("goals", "updated_at", "DATETIME"),
+            # Extended task fields
+            ("tasks", "source_type", "VARCHAR(30) DEFAULT 'manual'"),
+            ("tasks", "trigger_reason", "TEXT"),
+            ("tasks", "risk_score", "FLOAT DEFAULT 0"),
+            ("tasks", "expected_impact", "TEXT"),
+            ("tasks", "linked_insight_id", "INTEGER"),
+            ("tasks", "linked_scenario_id", "INTEGER"),
+            # Extended custom_kpi fields
+            ("custom_kpis", "category", "VARCHAR(30) DEFAULT 'revenue'"),
+            ("custom_kpis", "priority_status", "VARCHAR(20) DEFAULT 'medium'"),
+            ("custom_kpis", "role_visibility", "TEXT"),
+            ("custom_kpis", "threshold_warning", "FLOAT"),
+            ("custom_kpis", "threshold_critical", "FLOAT"),
+            ("custom_kpis", "workspace_id", "INTEGER DEFAULT 1"),
             ("daily_metrics", "workspace_id", "INTEGER DEFAULT 1"),
             ("goals", "workspace_id", "INTEGER DEFAULT 1"),
             ("notifications", "workspace_id", "INTEGER DEFAULT 1"),
@@ -181,6 +238,24 @@ def run_lightweight_migrations() -> None:
             ("daily_metrics", "gross_margin", "FLOAT DEFAULT 0"),
             ("daily_metrics", "cashflow", "FLOAT DEFAULT 0"),
             ("daily_metrics", "liquidity", "FLOAT DEFAULT 0"),
+        ]:
+            try:
+                _ensure_column(conn, table, column, ddl)
+            except Exception:
+                continue
+        # Phase C: Extended audit log fields
+        for table, column, ddl in [
+            ("audit_logs", "actor_role", "VARCHAR(64)"),
+            ("audit_logs", "context_json", "TEXT"),
+        ]:
+            try:
+                _ensure_column(conn, table, column, ddl)
+            except Exception:
+                continue
+        # Phase B: MFA and session tables (created via SQLAlchemy metadata, migrations are for existing DBs)
+        for table, column, ddl in [
+            ("mfa_secrets", "updated_at", "DATETIME"),
+            ("user_sessions", "user_agent", "TEXT"),
         ]:
             try:
                 _ensure_column(conn, table, column, ddl)

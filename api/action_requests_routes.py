@@ -15,6 +15,8 @@ from models.action_request import ActionRequest
 from models.action_request_review import ActionRequestReview
 from models.base import Base
 from models.task import Task, TaskHistory
+from api.audit_logs_routes import record_audit_event
+from api.role_guards import _get_workspace_role, MANAGER_ROLES, CEO_ROLES
 from services.email_service import send_notification_email
 from services.approval_policy_service import build_policy_snapshot, can_approve_action, get_policy_settings, get_workspace_role
 from services.integration_execution_service import create_hubspot_task, create_mailchimp_campaign_draft, create_notion_strategy_page, create_social_campaign_drafts, create_trello_card, deliver_webhook_action, post_slack_strategy_message
@@ -34,6 +36,10 @@ Base.metadata.create_all(bind=engine)
 
 VALID_STATUSES = {"pending_approval", "approved", "rejected", "executed"}
 VALID_EXECUTION_TYPES = {"task", "report", "email_draft", "strategy_bundle"}
+# Categories that require dual review regardless of policy setting
+_ALWAYS_DUAL_REVIEW_CATEGORIES = {"budget", "forecast", "financial", "pricing"}
+# AI-generated execution type — NEVER auto-execute
+_AI_EXECUTION_TYPE = "ai_suggestion"
 
 
 class ActionRequestCreate(BaseModel):
@@ -698,15 +704,35 @@ async def approve_action_request(
     item.approval_note = body.note
     item.approved_at = datetime.utcnow()
 
-    if policy.get("requires_dual_review") and approval_count < 2:
+    # Determine if dual review is required: by policy OR by category
+    category_requires_dual = (item.category or "").lower() in _ALWAYS_DUAL_REVIEW_CATEGORIES
+    policy_requires_dual = policy.get("requires_dual_review", False)
+    needs_dual = policy_requires_dual or category_requires_dual
+
+    # AI-generated suggestions: NEVER auto-execute
+    is_ai_suggestion = item.execution_type == _AI_EXECUTION_TYPE
+
+    if needs_dual and approval_count < 2:
         item.progress_pct = max(item.progress_pct, 15.0)
         item.progress_stage = "awaiting_second_approval"
         item.next_action_text = "Zweite Freigabe eines berechtigten Reviewers ausstehend."
+    elif is_ai_suggestion:
+        item.progress_stage = "approved_pending_manual_execution"
+        item.next_action_text = "KI-Vorschlag freigegeben — manuelle Ausführung erforderlich."
     elif body.execute_now and policy.get("auto_execute_on_approval", True):
         await _execute_action_request(item, current_user, db, body.assigned_to)
 
     db.commit()
     db.refresh(item)
+
+    # Audit log
+    ws_role = _get_workspace_role(current_user, workspace_id, db)
+    record_audit_event(
+        db, workspace_id, current_user.id, ws_role,
+        action="action_request_approved",
+        entity_type="action_request", entity_id=item.id,
+        metadata_json=json.dumps({"title": item.title, "note": body.note, "dual_required": needs_dual, "is_ai": is_ai_suggestion}),
+    )
     return {**_to_response(item, policy), "review_history": _review_history(db, item.id)}
 
 
@@ -737,4 +763,84 @@ def reject_action_request(
     item.progress_stage = "rejected"
     db.commit()
     db.refresh(item)
+
+    ws_role = _get_workspace_role(current_user, workspace_id, db)
+    record_audit_event(
+        db, workspace_id, current_user.id, ws_role,
+        action="action_request_rejected",
+        entity_type="action_request", entity_id=item.id,
+        metadata_json=json.dumps({"title": item.title, "note": body.note}),
+    )
     return {**_to_response(item, policy), "review_history": _review_history(db, item.id)}
+
+
+@router.post("/{request_id}/confirm-second")
+async def confirm_second_approval(
+    request_id: int,
+    body: ApprovalBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    workspace_id: int = Depends(get_current_workspace_id),
+):
+    """Second-reviewer confirmation for dual-review actions (budget, forecasts, high-risk)."""
+    item = db.query(ActionRequest).filter(ActionRequest.id == request_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Action Request nicht gefunden.")
+    if item.status != "approved" or item.progress_stage != "awaiting_second_approval":
+        raise HTTPException(status_code=400, detail="Dieser Request erwartet keine zweite Bestätigung.")
+
+    ws_role = _get_workspace_role(current_user, workspace_id, db)
+    if ws_role not in MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="Zweite Bestätigung erfordert mindestens Manager-Berechtigung.")
+
+    if item.approved_by == current_user.email:
+        raise HTTPException(status_code=409, detail="Der zweite Reviewer muss ein anderer Nutzer sein als der erste.")
+
+    settings = get_policy_settings(db, workspace_id)
+    role = get_workspace_role(db, current_user, workspace_id)
+    _, policy = can_approve_action(role, item.risk_score, item.impact_score, settings=settings)
+
+    _record_review(item, current_user, ws_role, "approved", body.note, db)
+    item.approval_note = (item.approval_note or "") + f" | 2nd: {body.note or 'confirmed'}"
+    item.progress_stage = "dual_approved"
+    item.next_action_text = "Dual-Freigabe abgeschlossen — bereit zur Ausführung."
+
+    is_ai_suggestion = item.execution_type == _AI_EXECUTION_TYPE
+    if body.execute_now and not is_ai_suggestion and policy.get("auto_execute_on_approval", True):
+        await _execute_action_request(item, current_user, db, body.assigned_to)
+
+    db.commit()
+    db.refresh(item)
+
+    record_audit_event(
+        db, workspace_id, current_user.id, ws_role,
+        action="action_request_second_confirmed",
+        entity_type="action_request", entity_id=item.id,
+        metadata_json=json.dumps({"title": item.title, "second_reviewer": current_user.email}),
+    )
+    return {**_to_response(item, policy), "review_history": _review_history(db, item.id)}
+
+
+@router.get("/command-center")
+def command_center(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    workspace_id: int = Depends(get_current_workspace_id),
+):
+    """List all pending AI suggestions for manual approval/execution."""
+    ws_role = _get_workspace_role(current_user, workspace_id, db)
+
+    query = db.query(ActionRequest).filter(
+        ActionRequest.workspace_id == workspace_id,
+        ActionRequest.execution_type == _AI_EXECUTION_TYPE,
+        ActionRequest.status.in_(["pending_approval", "approved"]),
+    )
+    if ws_role not in MANAGER_ROLES:
+        query = query.filter(ActionRequest.requested_by == current_user.email)
+
+    items = query.order_by(ActionRequest.created_at.desc()).limit(200).all()
+    return {
+        "viewer_role": ws_role,
+        "items": [_to_response(item) for item in items],
+        "count": len(items),
+    }

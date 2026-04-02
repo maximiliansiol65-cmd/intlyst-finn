@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useCompanyProfile } from "../contexts/CompanyProfileContext";
+import { PriorityLegend } from "../components/ui";
 import "../styles/premium-dashboard.css";
 
 // ─── Industry Benchmarks (Punkt 8: Benchmarking & Vergleich) ──────────────────
@@ -385,6 +386,7 @@ export default function Ceo() {
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState(null);
   const [expandedId, setExpandedId]     = useState(null);
+  const [showAllRecos, setShowAllRecos] = useState(false);
 
   const framing    = ROLE_FRAMING[profileId]        || ROLE_FRAMING.management_ceo;
   const benchmarks = INDUSTRY_BENCHMARKS[profileId] || INDUSTRY_BENCHMARKS.management_ceo;
@@ -414,6 +416,11 @@ export default function Ceo() {
 
   // Priorisiert sortierte Empfehlungen (Punkt 4)
   const sortedRecommendations = useMemo(() => sortedRecos(briefing?.recommendations), [briefing]);
+  const focusedRecommendations = useMemo(
+    () => sortedRecommendations.filter((rec) => ["critical", "high"].includes(rec.priority)).slice(0, 5),
+    [sortedRecommendations],
+  );
+  const visibleRecommendations = showAllRecos ? sortedRecommendations.slice(0, 5) : focusedRecommendations;
 
   // Ursachenbäume (Punkt 5)
   const causeItems = useMemo(() => causeOverview?.items || [], [causeOverview]);
@@ -520,17 +527,35 @@ export default function Ceo() {
         <div style={{ display: "grid", gap: "var(--s-4)" }}>
 
           {/* Fokus-Banner */}
-          <div style={{ padding: "14px 18px", background: "var(--c-surface-2)", borderRadius: 10, border: "1px solid var(--c-border)" }}>
+          <div style={{ padding: "14px 18px", background: "var(--c-surface-2)", borderRadius: 10, border: "1px solid var(--c-border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             <div style={{ fontWeight: 700, fontSize: 14, color: "#0f172a", marginBottom: 4 }}>
               Fokus-Linse: {framing.lens}
             </div>
             <div style={{ fontSize: 13, color: "#64748b" }}>
-              {sortedRecommendations.length} Empfehlung{sortedRecommendations.length !== 1 ? "en" : ""} · nach Priorität und Impact sortiert · adaptiert für <strong>{profile.label}</strong>
+              Fokus: Kritisch + Hoch (max. 5) · {sortedRecommendations.length} Empfehlung{sortedRecommendations.length !== 1 ? "en" : ""} gesamt
             </div>
+            <button
+              onClick={() => setShowAllRecos((v) => !v)}
+              style={{
+                padding: "6px 12px",
+                borderRadius: 8,
+                border: "1px solid #e2e8f0",
+                background: "#fff",
+                color: "#334155",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              {showAllRecos ? "Fokus anzeigen" : "Mittel/Niedrig einblenden"}
+            </button>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <PriorityLegend />
           </div>
 
           {/* Empfehlungsliste */}
-          {sortedRecommendations.length === 0 ? (
+          {visibleRecommendations.length === 0 ? (
             <div style={{ padding: "var(--s-6)", borderRadius: 12, background: "var(--c-surface-2)", textAlign: "center" }}>
               <div style={{ fontSize: 36, marginBottom: 10 }}>📋</div>
               <div style={{ fontWeight: 700, fontSize: 15, color: "#334155" }}>Noch keine Empfehlungen vorhanden</div>
@@ -547,7 +572,7 @@ export default function Ceo() {
             </div>
           ) : (
             <div style={{ display: "grid", gap: 12 }}>
-              {sortedRecommendations.map((item) => (
+              {visibleRecommendations.map((item) => (
                 <RecommendationAdvisoryCard key={item.id} item={item} profileId={profileId} profile={profile} />
               ))}
             </div>

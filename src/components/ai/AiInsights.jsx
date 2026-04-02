@@ -1,106 +1,56 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+
 import { useCompanyProfile } from "../../contexts/CompanyProfileContext";
 import { getDashboardRoleCopy } from "../../config/dashboardRoles";
+import { buildAdvisoryAgendaFromAnalysis, getPriorityPalette } from "../../utils/advisorLens";
 
 const TYPE_CONFIG = {
-  strength: { color: "#10b981", bg: "#10b98115", label: "Staerke" },
-  weakness: { color: "#ef4444", bg: "#ef444415", label: "Schwaeche" },
-  opportunity: { color: "#6366f1", bg: "#6366f115", label: "Chance" },
-  warning: { color: "#f59e0b", bg: "#f59e0b15", label: "Warnung" },
-  risk: { color: "#f59e0b", bg: "#f59e0b15", label: "Risiko" },
+  strength: { color: "#15803d", bg: "#f0fdf4", label: "Staerke" },
+  weakness: { color: "#b91c1c", bg: "#fef2f2", label: "Schwaeche" },
+  opportunity: { color: "#1d4ed8", bg: "#eff6ff", label: "Chance" },
+  warning: { color: "#c2410c", bg: "#fff7ed", label: "Warnung" },
+  risk: { color: "#c2410c", bg: "#fff7ed", label: "Risiko" },
 };
 
-const IMPACT = {
-  high: { color: "#ef4444", label: "Hoher Impact" },
-  medium: { color: "#f59e0b", label: "Mittlerer Impact" },
-  low: { color: "#6366f1", label: "Niedriger Impact" },
-};
+function BriefCard({ label, text, tone = "#334155", background = "#ffffff", border = "#e2e8f0" }) {
+  return (
+    <div style={{ background, border: `1px solid ${border}`, borderRadius: 14, padding: "14px 16px" }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: tone, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 13, color: "#334155", lineHeight: 1.6 }}>{text}</div>
+    </div>
+  );
+}
 
-function InsightCard({ insight }) {
-  const t = TYPE_CONFIG[insight.type] || TYPE_CONFIG.opportunity;
-  const imp = IMPACT[insight.impact] || IMPACT.medium;
+function DecisionCard({ item }) {
+  const typeCfg = TYPE_CONFIG[item.type] || TYPE_CONFIG.opportunity;
+  const priority = getPriorityPalette(item.priorityKey);
 
   return (
-    <div
-      style={{
-        background: "#f5f5f7",
-        border: `1px solid ${t.color}20`,
-        borderLeft: `3px solid ${t.color}`,
-        borderRadius: "0 10px 10px 0",
-        padding: "14px 16px",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            padding: "2px 8px",
-            borderRadius: 4,
-            background: t.bg,
-            color: t.color,
-            textTransform: "uppercase",
-            letterSpacing: "0.04em",
-          }}
-        >
-          {t.label}
-        </span>
-        <span style={{ fontSize: 10, fontWeight: 600, color: imp.color }}>{imp.label}</span>
-        <span style={{ fontSize: 10, color: "#475569", marginLeft: "auto" }}>
-          Confidence: {insight.confidence}%
-        </span>
-      </div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: "#1d1d1f", marginBottom: 6 }}>{insight.title}</div>
-      <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.6, marginBottom: 8 }}>{insight.description}</div>
-      {insight.kpi_link && (
-        <div
-          style={{
-            fontSize: 11,
-            color: "#334155",
-            background: "#eef2ff",
-            borderRadius: 6,
-            padding: "7px 10px",
-            marginBottom: 8,
-          }}
-        >
-          KPI-Bezug: {insight.kpi_link}
+    <div style={{ background: "#ffffff", border: `1px solid ${typeCfg.color}26`, borderRadius: 16, padding: 16, display: "grid", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: typeCfg.bg, color: typeCfg.color, textTransform: "uppercase" }}>
+              {typeCfg.label}
+            </span>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: priority.bg, color: priority.tone, textTransform: "uppercase" }}>
+              {priority.label}
+            </span>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#eff6ff", color: "#1d4ed8", textTransform: "uppercase" }}>
+              {item.ownerLabel}
+            </span>
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a" }}>{item.title}</div>
         </div>
-      )}
-      <div
-        style={{
-          fontSize: 11,
-          color: "#94a3b8",
-          background: "#ffffff",
-          borderRadius: 6,
-          padding: "7px 10px",
-          marginBottom: 8,
-          borderLeft: `2px solid ${imp.color}`,
-        }}
-      >
-        Evidence: {insight.evidence}
+        <div style={{ maxWidth: 260, fontSize: 12, color: "#475569", lineHeight: 1.55 }}>{item.prioritization}</div>
       </div>
-      <div
-        style={{
-          fontSize: 12,
-          color: "#374151",
-          background: "#ffffff",
-          borderRadius: 6,
-          padding: "8px 10px",
-          borderLeft: `2px solid ${t.color}`,
-        }}
-      >
-        -&gt; {insight.action}
-      </div>
-      {insight.strategic_context && (
-        <div style={{ fontSize: 11, color: "#475569", marginTop: 8, lineHeight: 1.5 }}>
-          Strategische Einordnung: {insight.strategic_context}
-        </div>
-      )}
-      {insight.segment && (
-        <div style={{ fontSize: 10, color: "#475569", marginTop: 7 }}>
-          Segment: {insight.segment}
-        </div>
-      )}
+
+      <BriefCard label="Analyse" text={item.analysis} tone={typeCfg.color} background={typeCfg.bg} border={`${typeCfg.color}30`} />
+      <BriefCard label="Einordnung" text={item.assessment} />
+      <BriefCard label="Empfehlung" text={item.recommendation.immediate} tone="#b91c1c" background="#fef2f2" border="#fecaca" />
+      <BriefCard label="Strategische Perspektive" text={item.strategicPerspective} tone="#1d4ed8" background="#eff6ff" border="#bfdbfe" />
     </div>
   );
 }
@@ -119,8 +69,8 @@ export default function AiInsights() {
       const res = await fetch("/api/ai/insights");
       if (!res.ok) throw new Error(`Status ${res.status}`);
       setData(await res.json());
-    } catch (e) {
-      setError(e.message);
+    } catch (err) {
+      setError(err.message);
     }
     setLoading(false);
   }
@@ -129,108 +79,61 @@ export default function AiInsights() {
     load();
   }, []);
 
+  const agenda = buildAdvisoryAgendaFromAnalysis(data);
+
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 10, flexWrap: "wrap" }}>
         <div>
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: "#475569",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-            }}
-          >
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em" }}>
             {roleCopy.insightsLabel}
           </div>
-          {data?.ceo_summary && <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>{data.ceo_summary}</div>}
-          {!data?.ceo_summary && data?.summary && <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>{data.summary}</div>}
-          {!data?.summary && data?.top_action && <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>{data.top_action}</div>}
+          <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+            Die App ordnet Signale jetzt wie ein Berater ein: Was passiert, wie relevant ist es und was ist der naechste Schritt?
+          </div>
         </div>
         <button
           onClick={load}
           disabled={loading}
           style={{
-            background: loading ? "#e8e8ed" : "#6366f118",
-            border: "1px solid #6366f130",
-            borderRadius: 7,
-            padding: "5px 12px",
+            background: loading ? "#e2e8f0" : "#eff6ff",
+            border: "1px solid #bfdbfe",
+            borderRadius: 8,
+            padding: "6px 12px",
             fontSize: 11,
-            fontWeight: 600,
-            color: loading ? "#475569" : "#818cf8",
+            fontWeight: 700,
+            color: loading ? "#64748b" : "#1d4ed8",
             cursor: loading ? "not-allowed" : "pointer",
           }}
         >
-          {loading ? "Analysiere..." : "↻ Neu analysieren"}
+          {loading ? "Analysiere..." : "Neu analysieren"}
         </button>
       </div>
 
-      {loading && (
-        <div
-          style={{
-            background: "#f5f5f7",
-            border: "1px solid #1e1e2e",
-            borderRadius: 10,
-            padding: "24px",
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-          }}
-        >
-          <div className="spinner spinner-sm" />
-          <span style={{ fontSize: 13, color: "#475569" }}>Claude analysiert deine Daten...</span>
-        </div>
-      )}
+      {loading && <div style={{ fontSize: 13, color: "#64748b", padding: "12px 0" }}>Beratungslogik wird vorbereitet...</div>}
 
       {error && !loading && (
-        <div
-          style={{
-            background: "#ef444415",
-            border: "1px solid #ef444430",
-            borderRadius: 10,
-            padding: "12px 16px",
-            fontSize: 13,
-            color: "#ef4444",
-          }}
-        >
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 12, padding: "12px 14px", fontSize: 13, color: "#b91c1c" }}>
           Fehler: {error}
         </div>
       )}
 
-      {!loading && !error && data?.insights && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div
-            style={{
-              background: "#f5f5f7",
-              border: "1px solid #1e1e2e",
-              borderRadius: 10,
-              padding: "12px 14px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 10, color: "#475569", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
-                {roleCopy.summaryLabel}
-              </div>
-              <div style={{ fontSize: 12, color: "#374151", marginTop: 4 }}>
-                Health Score: {data.health_score} · {data.health_label}
-              </div>
-            </div>
-            <div style={{ fontSize: 11, color: "#94a3b8", maxWidth: 340 }}>
-              {data.ceo_summary || `Top Action: ${data.top_action}`}
-            </div>
+      {!loading && !error && data && (
+        <div style={{ display: "grid", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+            <BriefCard label="Analyse" text={agenda.analysis} tone="#1d4ed8" background="#eff6ff" border="#bfdbfe" />
+            <BriefCard label="Einordnung" text={agenda.assessment} />
+            <BriefCard label="Priorisierung" text={agenda.prioritization} tone="#b91c1c" background="#fef2f2" border="#fecaca" />
+            <BriefCard label="Strategische Perspektive" text={agenda.strategicPerspective} tone="#1d4ed8" background="#eff6ff" border="#bfdbfe" />
           </div>
-          {data.insights.map((ins, i) => (
-            <InsightCard key={i} insight={ins} />
-          ))}
+
+          <div style={{ display: "grid", gap: 8 }}>
+            {agenda.items.map((item) => (
+              <DecisionCard key={`${item.title}-${item.priorityKey}`} item={item} />
+            ))}
+          </div>
         </div>
       )}
-
     </div>
   );
 }

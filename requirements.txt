@@ -10,6 +10,8 @@ python-jose[cryptography]==3.5.0
 slowapi==0.1.9
 pydantic[email]
 apscheduler==3.10.4
+pyotp==2.9.0
+cryptography==42.0.8
 
 # --- Analyse-Engine (Schicht 2–3) ---
 numpy>=1.24.0

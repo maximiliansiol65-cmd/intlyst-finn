@@ -81,3 +81,27 @@ def get_runtime_secret_issues() -> list[str]:
         issues.append("STRIPE_WEBHOOK_SECRET ist gesetzt, aber offensichtlich ein Platzhalter oder ungueltig.")
 
     return issues
+
+
+# ---------------------------------------------------------------------------
+# Session-Dauer-Konfiguration (konfigurierbar per Rolle)
+# ---------------------------------------------------------------------------
+
+def get_session_duration_hours(role: str) -> int:
+    """Return session duration in hours based on workspace role.
+
+    CEO / owner: 24 h (stricter security).
+    Manager-level (COO, CMO, CFO, admin): 24 h.
+    All other roles: 168 h (1 week).
+
+    Override via env vars SESSION_DURATION_CEO / SESSION_DURATION_MANAGER / SESSION_DURATION_MEMBER.
+    """
+    ceo_hours = int(os.getenv("SESSION_DURATION_CEO", "24"))
+    manager_hours = int(os.getenv("SESSION_DURATION_MANAGER", "24"))
+    member_hours = int(os.getenv("SESSION_DURATION_MEMBER", "168"))
+
+    if role in ("owner", "ceo"):
+        return ceo_hours
+    if role in ("admin", "coo", "cmo", "cfo"):
+        return manager_hours
+    return member_hours

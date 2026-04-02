@@ -50,6 +50,7 @@ const Social = lazy(() => import("./pages/Social"));
 const Planner = lazy(() => import("./pages/Planner"));
 const TeamCenter = lazy(() => import("./pages/TeamCenter"));
 const Szenarien = lazy(() => import("./pages/Szenarien"));
+const Forecast  = lazy(() => import("./pages/Forecast"));
 
 // ── Loader ────────────────────────────────────────────────────────────────────
 function Gear({ size, duration, direction = 1, style = {} }) {
@@ -219,6 +220,7 @@ function AppRoutes() {
             <Route path="/ceo"         element={<Ceo />} />
             <Route path="/review-audit" element={<ReviewAudit />} />
             <Route path="/szenarien"   element={<Szenarien />} />
+            <Route path="/forecast"    element={<Forecast />} />
 
             {/* Legacy redirects */}
             <Route path="/insights"        element={<Navigate to="/analyse" replace />} />

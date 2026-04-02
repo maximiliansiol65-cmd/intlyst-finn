@@ -13,6 +13,8 @@ from database import get_db
 from api.auth_routes import User, get_current_user
 from models.daily_metrics import DailyMetrics
 from security_config import is_configured_secret
+from database import get_current_workspace_id
+from services.forecast_service import persist_forecast_diagnosis
 
 router = APIRouter(prefix="/api/forecast", tags=["forecast"])
 
@@ -45,6 +47,12 @@ class ForecastResponse(BaseModel):
     summary: str
     confidence_note: str = ""
     generated_by: str = "claude"
+    persisted_forecast_id: Optional[int] = None
+    linked_insight_id: Optional[int] = None
+    root_cause_insight_id: Optional[int] = None
+    decision_problem_id: Optional[int] = None
+    hidden_problems: list[dict] = []
+    recommended_actions: list[str] = []
 
 
 METRIC_LABELS = {
@@ -249,7 +257,7 @@ async def get_forecast(
         for point in result["forecast"]
     ]
 
-    return ForecastResponse(
+    response = ForecastResponse(
         metric=metric,
         metric_label=label,
         horizon_days=horizon,
@@ -261,3 +269,27 @@ async def get_forecast(
         confidence_note=result.get("confidence_note", ""),
         generated_by=result.get("generated_by", "claude"),
     )
+    try:
+        workspace_id = get_current_workspace_id() or 1
+        diagnosis = persist_forecast_diagnosis(
+            db=db,
+            workspace_id=workspace_id,
+            kpi_name=metric,
+            forecast_result={
+                "historical": historical_raw,
+                "forecast": result.get("forecast", []),
+                "trend": result.get("trend", "stable"),
+                "growth_pct": result.get("growth_pct", 0.0),
+                "confidence": 70.0,
+            },
+            historical_points=historical_raw,
+        )
+        response.persisted_forecast_id = int(diagnosis["forecast_record"].id)
+        response.linked_insight_id = diagnosis["linked_insight_id"]
+        response.root_cause_insight_id = diagnosis["root_cause_insight_id"]
+        response.decision_problem_id = diagnosis["decision_problem_id"]
+        response.hidden_problems = diagnosis["hidden_problems"]
+        response.recommended_actions = diagnosis["actions"]
+    except Exception:
+        pass
+    return response

@@ -18,6 +18,30 @@ from database import get_db, get_current_workspace_id
 from api.auth_routes import User, get_current_user
 from models.daily_metrics import DailyMetrics
 from security_config import is_configured_secret
+from models.audit_log import AuditLog
+
+
+def _record_ai_audit(db: Session, user: "User", action: str, summary: str) -> None:
+    """Record an AI interaction in the audit log."""
+    try:
+        import json as _json
+        workspace_id = getattr(user, "active_workspace_id", None)
+        if not workspace_id:
+            return
+        row = AuditLog(
+            workspace_id=workspace_id,
+            actor_user_id=user.id,
+            actor_role="ai_engine",
+            action=action,
+            entity_type="recommendation",
+            metadata_json=_json.dumps({"summary": summary[:500]}),
+            created_at=datetime.utcnow(),
+        )
+        db.add(row)
+        db.commit()
+    except Exception:
+        pass  # Audit logging must never break the main flow
+
 from services.analysis_service import (
     build_analysis_context,
     build_analysis_snapshot,
@@ -28,6 +52,7 @@ from services.analysis_service import (
     score_recommendation_quality,
 )
 from services.enterprise_ai_service import build_enterprise_ai_response
+from services.forecast_service import persist_forecast_diagnosis
 
 # Analyse-Engine Schichten 1–4
 try:
@@ -147,12 +172,59 @@ class Insight(BaseModel):
     action: str
     impact: str
     impact_pct: float
+    priority: Optional[str] = None  # critical|high|medium|low
+    problem: Optional[str] = None
+    cause_primary: Optional[str] = None
+    cause_primary_score: Optional[int] = None
+    cause_secondary: Optional[list[str]] = None
+    cause_secondary_scores: Optional[list[int]] = None
+    cause_amplifiers: Optional[list[str]] = None
+    cause_amplifier_scores: Optional[list[int]] = None
+    impact_level: Optional[str] = None      # high|medium|low
+    confidence_level: Optional[str] = None  # high|medium|low
+    time_factor: Optional[str] = None       # immediate|this_week|this_month
+    expected_result: Optional[str] = None
     kpi_link: Optional[str] = None
     strategic_context: Optional[str] = None
     segment: Optional[str] = None
+    owner_role: Optional[str] = None
+    dashboard_summary: Optional[str] = None
+    primary_metric: Optional[str] = None
+    benchmark_note: Optional[str] = None
+    forecast_note: Optional[str] = None
+    immediate_action: Optional[str] = None
+    mid_term_action: Optional[str] = None
+    long_term_action: Optional[str] = None
+    period_7d: Optional[str] = None
+    period_30d: Optional[str] = None
+    period_12m: Optional[str] = None
     confidence: int
     quality_score: Optional[int] = None
     quality_label: Optional[str] = None
+
+
+class DashboardKPIItem(BaseModel):
+    id: str
+    kpi: str
+    dashboard_summary: str
+    main_cause: str
+    main_cause_score: Optional[int] = None
+    secondary_causes: list[str] = []
+    secondary_scores: list[int] = []
+    amplifiers: list[str] = []
+    amplifier_scores: list[int] = []
+    recommendation: str
+    immediate_action: Optional[str] = None
+    mid_term_action: Optional[str] = None
+    long_term_action: Optional[str] = None
+    owner_role: Optional[str] = None
+    benchmark_note: Optional[str] = None
+    forecast_note: Optional[str] = None
+    period_7d: Optional[str] = None
+    period_30d: Optional[str] = None
+    period_12m: Optional[str] = None
+    priority: Optional[str] = None
+    impact_pct: Optional[float] = None
 
 
 class AnalysisResponse(BaseModel):
@@ -168,6 +240,7 @@ class AnalysisResponse(BaseModel):
     source: str
     processing_ms: float
     causal_chain: list[str] = []  # Ursachen-Kette (vom Top-Metrik bis Kernursache)
+    dashboard_items: list[DashboardKPIItem] = []
 
 
 class RecommendationItem(BaseModel):
@@ -306,6 +379,12 @@ class ForecastResponse(BaseModel):
     key_drivers: list[str]
     source: str
     processing_ms: float
+    persisted_forecast_id: Optional[int] = None
+    linked_insight_id: Optional[int] = None
+    root_cause_insight_id: Optional[int] = None
+    decision_problem_id: Optional[int] = None
+    hidden_problems: list[dict] = []
+    recommended_actions: list[str] = []
 
 
 class AIMetricsResponse(BaseModel):
@@ -667,10 +746,139 @@ def _safe_actions(items: list[dict]) -> List[OptimizedAction]:
     return safe
 
 
+def _owner_role_for_signal(text: Optional[str]) -> str:
+    haystack = str(text or "").lower()
+    if any(token in haystack for token in ("cash", "marge", "profit", "roi", "liquid", "budget", "kosten", "umsatz")):
+        return "CFO"
+    if any(token in haystack for token in ("traffic", "lead", "kampagne", "reach", "marketing", "content")):
+        return "CMO"
+    if any(token in haystack for token in ("conversion", "funnel", "checkout", "prozess", "effizienz", "team", "operations")):
+        return "COO"
+    if any(token in haystack for token in ("forecast", "chance", "segment", "markt", "benchmark", "scenario", "szenario")):
+        return "Strategist"
+    return "CEO"
+
+
+def _period_note(snapshot: dict, metric_key: str, label: str) -> str:
+    metric = snapshot.get(metric_key, {}) if snapshot else {}
+    trend_pct = float(metric.get("trend_pct", 0) or 0)
+    avg_value = metric.get("avg", metric.get("latest", 0))
+    return f"{label}: {avg_value:.2f} im Schnitt, Veraenderung {trend_pct:+.1f}%."
+
+
+def _build_dashboard_items(insights: list[Insight], source_data: dict) -> list[DashboardKPIItem]:
+    if not insights:
+        return []
+
+    revenue = source_data.get("revenue", {}) if source_data else {}
+    conversion = source_data.get("conversion_rate", {}) if source_data else {}
+    traffic = source_data.get("traffic", {}) if source_data else {}
+    weekday = source_data.get("weekday_pattern", {}) if source_data else {}
+    revenue_momentum = float(source_data.get("revenue_momentum_7d", 0) or 0) if source_data else 0.0
+
+    items: list[DashboardKPIItem] = []
+    for insight in insights[:5]:
+        metric_label = insight.primary_metric or insight.kpi_link or insight.title
+        benchmark_note = insight.benchmark_note or (
+            f"Interner Zielvergleich: Umsatztrend {float(revenue.get('trend_pct', 0) or 0):+.1f}%, "
+            f"Conversion {float(conversion.get('trend_pct', 0) or 0):+.1f}%."
+        )
+        forecast_note = insight.forecast_note or (
+            f"Wenn sich das aktuelle Momentum von {revenue_momentum:+.1f}% fortsetzt, bleibt der KPI in den naechsten 30 Tagen unter Druck."
+            if insight.priority in {"critical", "high"} and revenue_momentum < 0
+            else f"Bei stabilem Trend ist in 30 Tagen ein kontrollierbares KPI-Fenster realistisch."
+        )
+        dashboard_summary = insight.dashboard_summary or insight.problem or insight.description
+        items.append(
+            DashboardKPIItem(
+                id=insight.id,
+                kpi=metric_label,
+                dashboard_summary=dashboard_summary,
+                main_cause=insight.cause_primary or insight.description,
+                main_cause_score=insight.cause_primary_score,
+                secondary_causes=insight.cause_secondary or [],
+                secondary_scores=insight.cause_secondary_scores or [],
+                amplifiers=insight.cause_amplifiers or [],
+                amplifier_scores=insight.cause_amplifier_scores or [],
+                recommendation=insight.action,
+                immediate_action=insight.immediate_action or insight.action,
+                mid_term_action=insight.mid_term_action or insight.expected_result,
+                long_term_action=insight.long_term_action or insight.strategic_context,
+                owner_role=insight.owner_role or _owner_role_for_signal(metric_label),
+                benchmark_note=benchmark_note,
+                forecast_note=forecast_note,
+                period_7d=insight.period_7d or _period_note({"traffic": traffic}, "traffic", "7 Tage"),
+                period_30d=insight.period_30d or _period_note(source_data, "revenue", "30 Tage"),
+                period_12m=insight.period_12m or (
+                    f"12 Monate: Wochentags-Spread {float(weekday.get('spread_pct', 0) or 0):+.1f}% zwischen {weekday.get('best_day', 'Top-Tag')} und {weekday.get('worst_day', 'schwachem Tag')}."
+                ),
+                priority=insight.priority,
+                impact_pct=insight.impact_pct,
+            )
+        )
+    return items
+
+
 def _normalize_insight(item: Insight) -> Insight:
     insight_type = "warning" if item.type == "risk" else item.type
     confidence = max(0, min(100, item.confidence))
-    return item.model_copy(update={"type": insight_type, "confidence": confidence})
+    impact_pct = float(item.impact_pct or 0)
+
+    def _priority_from_signal() -> str:
+        if impact_pct >= 15 and confidence >= 70:
+            return "critical"
+        if impact_pct >= 10:
+            return "high"
+        if impact_pct >= 5:
+            return "medium"
+        return "low"
+
+    def _impact_level() -> str:
+        if impact_pct >= 12:
+            return "high"
+        if impact_pct >= 7:
+            return "medium"
+        return "low"
+
+    def _confidence_level() -> str:
+        if confidence >= 75:
+            return "high"
+        if confidence >= 60:
+            return "medium"
+        return "low"
+
+    def _time_factor(priority: str) -> str:
+        if priority == "critical":
+            return "immediate"
+        if priority == "high":
+            return "this_week"
+        return "this_month"
+
+    priority = item.priority or _priority_from_signal()
+    primary_score = item.cause_primary_score or min(95, max(50, confidence))
+    secondary = item.cause_secondary or []
+    secondary_scores = item.cause_secondary_scores or [max(30, primary_score - 20) for _ in secondary]
+    amplifiers = item.cause_amplifiers or []
+    amplifier_scores = item.cause_amplifier_scores or [max(20, primary_score - 30) for _ in amplifiers]
+    update = {
+        "type": insight_type,
+        "confidence": confidence,
+        "priority": priority,
+        "impact_level": item.impact_level or _impact_level(),
+        "confidence_level": item.confidence_level or _confidence_level(),
+        "time_factor": item.time_factor or _time_factor(priority),
+        "problem": item.problem or item.title or item.evidence,
+        "cause_primary": item.cause_primary or item.description,
+        "cause_primary_score": primary_score,
+        "cause_secondary_scores": secondary_scores,
+        "cause_amplifier_scores": amplifier_scores,
+        "expected_result": item.expected_result or "",
+        "owner_role": item.owner_role or _owner_role_for_signal(item.kpi_link or item.primary_metric or item.title),
+        "immediate_action": item.immediate_action or item.action,
+        "mid_term_action": item.mid_term_action or item.expected_result or item.action,
+        "long_term_action": item.long_term_action or item.strategic_context or item.expected_result or item.action,
+    }
+    return item.model_copy(update=update)
 
 
 def _validated_insights(items: list[Insight], source_data: dict) -> list[Insight]:
@@ -798,32 +1006,111 @@ def _local_analysis_fallback(source_data: dict, processing_ms: float) -> Analysi
     else:
         health_label, risk_level = "Kritisch", "critical"
 
+    trend_pct = float(rev.get("trend_pct", 0) or 0)
+    conv_trend_pct = float(conv.get("trend_pct", 0) or 0)
+
+    def _priority_from_delta(delta: float) -> str:
+        if delta <= -15:
+            return "critical"
+        if delta <= -8:
+            return "high"
+        if delta <= -3:
+            return "medium"
+        return "low"
+
+    def _impact_level(impact_pct: float) -> str:
+        if impact_pct >= 12:
+            return "high"
+        if impact_pct >= 7:
+            return "medium"
+        return "low"
+
+    def _confidence_level(confidence: int) -> str:
+        if confidence >= 75:
+            return "high"
+        if confidence >= 60:
+            return "medium"
+        return "low"
+
+    def _time_factor(priority: str) -> str:
+        if priority == "critical":
+            return "immediate"
+        if priority == "high":
+            return "this_week"
+        return "this_month"
+
     fallback_insights = [
         {
             "id": "revenue-trend",
             "type": "strength" if rev.get("trend") == "up" else "weakness",
             "title": "Umsatztrend im Fokus",
-            "description": f"Der Umsatztrend liegt bei {rev.get('trend_pct', 0):+.1f}% im Vergleich der letzten Periodenhaelften.",
-            "evidence": f"Umsatztrend: {rev.get('trend_pct', 0):+.1f}%",
+            "description": f"Der Umsatztrend liegt bei {trend_pct:+.1f}% im Vergleich der letzten Periodenhaelften.",
+            "evidence": f"Umsatztrend: {trend_pct:+.1f}%",
+            "dashboard_summary": f"Umsatz veraendert sich um {trend_pct:+.1f}% und wirkt direkt auf Liquiditaet und Zielerreichung.",
+            "priority": _priority_from_delta(trend_pct),
+            "problem": f"Umsatztrend {trend_pct:+.1f}% gegen Vorperiode",
+            "cause_primary": "Budget verteilt sich zu stark auf schwaechere Umsatzquellen",
+            "cause_primary_score": 78,
+            "cause_secondary": ["Kanalqualitaet schwankt zwischen den Wochen"],
+            "cause_secondary_scores": [62],
+            "cause_amplifiers": ["Monitoring findet nicht taeglich statt"],
+            "cause_amplifier_scores": [48],
             "action": "Top-Kanaele mit positivem Beitrag priorisieren und taeglich monitoren.",
+            "expected_result": "Stabilerer Umsatztrend innerhalb von 14 Tagen und klarere Budgeteffizienz.",
             "impact": "high",
             "impact_pct": 12.0,
+            "impact_level": _impact_level(12.0),
+            "confidence_level": _confidence_level(78),
+            "time_factor": _time_factor(_priority_from_delta(trend_pct)),
             "kpi_link": "KPI-Bezug: Umsatzentwicklung, Wochenvergleich und 7-Tage-Momentum.",
             "strategic_context": "Das Signal entscheidet direkt ueber kurzfristige Liquiditaet und den Spielraum fuer Wachstum.",
+            "owner_role": "CEO",
+            "primary_metric": "Umsatz",
+            "benchmark_note": f"Interner Benchmark: Wochenvergleich {wow:+.1f}% gegen Zielstabilitaet von mindestens 0%.",
+            "forecast_note": f"Wenn sich der Umsatztrend von {trend_pct:+.1f}% fortsetzt, sinkt der Umsatz in den naechsten 30 Tagen weiter.",
+            "immediate_action": "Budget der letzten 7 Tage auf die zwei staerksten Umsatzquellen konzentrieren.",
+            "mid_term_action": "Innerhalb von 14 Tagen die schwachen Kanaele reduzieren und Gewinner ausbauen.",
+            "long_term_action": "Ein regelbasiertes Umsatz-Portfolio mit klaren Stop-/Scale-Regeln etablieren.",
+            "period_7d": f"7 Tage: Umsatz-Momentum {float(source_data.get('revenue_momentum_7d', 0) or 0):+.1f}%.",
+            "period_30d": f"30 Tage: Umsatztrend {trend_pct:+.1f}% versus Vorperiode.",
+            "period_12m": "12 Monate: Historischer Vergleich ist im Fallback begrenzt, deshalb Trend monatlich weiter validieren.",
             "confidence": 78,
         },
         {
             "id": "conversion-opportunity",
             "type": "opportunity",
             "title": "Conversion gezielt verbessern",
-            "description": f"Die Conversion Rate liegt bei {conv.get('avg', 0):.2f}% und zeigt {conv.get('trend_pct', 0):+.1f}% Trend.",
+            "description": f"Die Conversion Rate liegt bei {conv.get('avg', 0):.2f}% und zeigt {conv_trend_pct:+.1f}% Trend.",
             "evidence": f"Conversion Rate: {conv.get('avg', 0):.2f}%",
+            "dashboard_summary": f"Conversion liegt bei {conv.get('avg', 0):.2f}% und entscheidet ueber die Ertragskraft des vorhandenen Traffics.",
+            "priority": _priority_from_delta(conv_trend_pct),
+            "problem": f"Conversion {conv.get('avg', 0):.2f}% mit Trend {conv_trend_pct:+.1f}%",
+            "cause_primary": "Reibungspunkte im meistgenutzten Funnel bremsen Abschluesse",
+            "cause_primary_score": 74,
+            "cause_secondary": ["Traffic-Qualitaet variiert zwischen Kanaelen"],
+            "cause_secondary_scores": [58],
+            "cause_amplifiers": ["Fehlende gezielte Tests in den kritischen Schritten"],
+            "cause_amplifier_scores": [45],
             "action": "Landing- und Checkout-Schritte mit den meisten Abbruechen zuerst optimieren.",
+            "expected_result": "Steigerung der Conversion um 0.2 bis 0.5 Prozentpunkte.",
             "impact": "medium",
             "impact_pct": 8.0,
+            "impact_level": _impact_level(8.0),
+            "confidence_level": _confidence_level(74),
+            "time_factor": _time_factor(_priority_from_delta(conv_trend_pct)),
             "kpi_link": "KPI-Bezug: Conversion Rate, Umsatz pro Visit und Funnel-Effizienz.",
             "strategic_context": "Verbessert die Profitabilitaet des bestehenden Traffics ohne sofort mehr Marketingbudget zu benoetigen.",
             "segment": "funnel",
+            "owner_role": "COO",
+            "primary_metric": "Conversion Rate",
+            "benchmark_note": f"Interner Benchmark: Umsatz pro Visit liegt bei EUR {float(source_data.get('revenue_per_visit', {}).get('avg', 0) or 0):.4f}.",
+            "forecast_note": "Wenn die Conversion in diesem Bereich stabilisiert wird, verbessert sich die Umsatzqualitaet schon innerhalb der naechsten Wochen.",
+            "immediate_action": "Die zwei groessten Drop-off-Stellen im Funnel heute priorisieren.",
+            "mid_term_action": "In 2 bis 4 Wochen Tests fuer Landingpage und Checkout sauber auswerten.",
+            "long_term_action": "Ein wiederholbares Funnel-Optimierungsprogramm mit festen KPI-Schwellen aufsetzen.",
+            "period_7d": f"7 Tage: Conversion-Momentum {float(source_data.get('conversion_momentum_7d', 0) or 0):+.2f} Prozentpunkte.",
+            "period_30d": f"30 Tage: Conversion-Trend {conv_trend_pct:+.1f}% gegen Vorperiode.",
+            "period_12m": "12 Monate: Funnel-Muster sollten saisonal geprueft und gegen groeßere Traffic-Schwankungen abgesichert werden.",
             "confidence": 74,
         },
     ]
@@ -841,6 +1128,7 @@ def _local_analysis_fallback(source_data: dict, processing_ms: float) -> Analysi
         risk_level=risk_level,
         source="fallback",
         processing_ms=processing_ms,
+        dashboard_items=_build_dashboard_items(insights, source_data),
     )
 
 
@@ -1061,6 +1349,38 @@ def _local_forecast(values: list[float], horizon: int, future_dates: list[str]) 
     return forecast, trend, round(growth_pct, 2), confidence, summary, drivers
 
 
+def _with_persisted_forecast_context(
+    *,
+    db: Session,
+    metric: str,
+    response: ForecastResponse,
+) -> ForecastResponse:
+    try:
+        workspace_id = get_current_workspace_id() or 1
+        diagnosis = persist_forecast_diagnosis(
+            db=db,
+            workspace_id=workspace_id,
+            kpi_name=metric,
+            forecast_result={
+                "historical": [point.model_dump() for point in response.historical],
+                "forecast": [point.model_dump() for point in response.forecast],
+                "trend": response.trend,
+                "growth_pct": response.growth_pct,
+                "confidence": response.confidence,
+            },
+            historical_points=[point.model_dump() for point in response.historical],
+        )
+        response.persisted_forecast_id = int(diagnosis["forecast_record"].id)
+        response.linked_insight_id = diagnosis["linked_insight_id"]
+        response.root_cause_insight_id = diagnosis["root_cause_insight_id"]
+        response.decision_problem_id = diagnosis["decision_problem_id"]
+        response.hidden_problems = diagnosis["hidden_problems"]
+        response.recommended_actions = diagnosis["actions"]
+    except Exception:
+        pass
+    return response
+
+
 def _local_optimizer_fallback(processing_ms: float) -> OptimizerResponse:
     actions = [
         OptimizedAction(
@@ -1149,6 +1469,7 @@ async def get_analysis(days: int = 30, force_fallback: bool = Query(default=Fals
             source="local",
             processing_ms=ms,
             causal_chain=[],
+            dashboard_items=[],
         )
 
     cache_key = f"analysis:{days}:{_payload_fingerprint(source_data)}"
@@ -1190,11 +1511,34 @@ Antworte AUSSCHLIESSLICH als JSON in diesem Schema:
       "title": "max 7 Woerter",
       "description": "Chain-of-Thought: Signal → Ursache → Implikation (2-3 Saetze mit Zahlen)",
       "evidence": "Konkrete Kennzahl mit absolutem Wert und Vergleich",
+      "priority": "critical|high|medium|low",
+      "problem": "Was laeuft falsch? klar messbar",
+      "cause_primary": "Wahrscheinlichste Hauptursache",
+      "cause_primary_score": 0,
+      "cause_secondary": ["moegliche Nebenursachen"],
+      "cause_secondary_scores": [0],
+      "cause_amplifiers": ["Verstaerker, die das Problem groesser machen"],
+      "cause_amplifier_scores": [0],
       "action": "Sofortmassnahme mit messbarem Ziel",
+      "expected_result": "Messbarer Effekt nach Umsetzung",
       "impact": "high|medium|low",
+      "impact_level": "high|medium|low",
       "impact_pct": 0,
+      "confidence_level": "high|medium|low",
+      "time_factor": "immediate|this_week|this_month",
       "kpi_link": "Welcher KPI oder welches Unternehmensziel betroffen ist",
       "strategic_context": "Einordnung fuer Wachstum, Profitabilitaet oder Marktrisiko",
+      "owner_role": "CEO|COO|CMO|CFO|Strategist",
+      "dashboard_summary": "Kurzfassung fuer Dashboard: KPI + Bedeutung in 1 Satz",
+      "primary_metric": "Welche KPI im Dashboard betroffen ist",
+      "benchmark_note": "Vergleich gegen Vergangenheit, Ziel oder Benchmark in 1 Satz",
+      "forecast_note": "Was passiert, wenn der Trend 30 Tage anhaelt",
+      "immediate_action": "Konkrete Sofortmassnahme",
+      "mid_term_action": "Konkrete Massnahme fuer 2-6 Wochen",
+      "long_term_action": "Strategische Massnahme fuer die naechsten Monate",
+      "period_7d": "Einordnung fuer 7 Tage",
+      "period_30d": "Einordnung fuer 30 Tage",
+      "period_12m": "Einordnung fuer 12 Monate",
       "segment": null,
       "confidence": 0
     }}
@@ -1209,6 +1553,9 @@ Regeln:
 - Bevorzuge abgeleitete Kennzahlen: Umsatz/Visit, AOV, Neukunden/Conversion, 7-Tage-Momentum, Wochentagsmuster.
 - Jedes Insight: evidence mit Zahl, confidence 0-100, impact_pct > 0.
 - Jedes Insight braucht KPI-Bezug und strategische Einordnung in klarem CEO-Deutsch.
+- Jedes Insight muss klar Problem → Ursache → Massnahme abbilden und eine priorisierte Einstufung enthalten.
+- Ursachen als Hauptursache, Nebenursachen, Verstaerker ausgeben.
+- Jede Ursache mit Score 0-100 bewerten (Hoehe = staerkerer Einfluss).
 - confidence >75 = starkes Signal (mehrere Datenpunkte konsistent); 50-75 = mittel; <50 = schwach.
 - Sortiere Insights nach impact_pct absteigend."""
 
@@ -1248,6 +1595,7 @@ Regeln:
             source="claude",
             processing_ms=ms,
             causal_chain=causal_chain,
+            dashboard_items=_build_dashboard_items(insights, source_data),
         )
         _cache_set(cache_key, response)
         return response
@@ -1270,6 +1618,7 @@ async def get_recommendations(days: int = 30, force_fallback: bool = Query(defau
 
     if not source_data:
         ms = _record_metric("recommendations", started, "local", True)
+        _record_ai_audit(db, current_user, "ai_recommendation_local_fallback", "No data available")
         return RecommendationsResponse(
             generated_at=datetime.utcnow().isoformat(),
             recommendations=[],
@@ -1324,7 +1673,7 @@ Antwort nur als JSON:
       "expected_result": "Messbarer Effekt mit Einheit (EUR oder %)",
       "impact_pct": 0,
       "effort": "low|medium|high",
-      "priority": "high|medium|low",
+      "priority": "critical|high|medium|low",
       "category": "marketing|product|sales|operations|finance",
       "timeframe": "immediate|this_week|this_month|this_quarter",
       "action_label": "max 4 Woerter",
@@ -1368,6 +1717,7 @@ Regeln:
 - Jedes rationale: mindestens eine Zahl (EUR, %, Trend).
 - Jede Empfehlung braucht KPI-Bezug, Priorisierungsgrund und strategischen Kontext.
 - Jede Empfehlung braucht eine klare owner_role fuer das Management.
+- priority = critical nur bei unmittelbarem Umsatz- oder Risikodruck.
 - Timeframe-Pflicht: mind. 1x 'immediate', mind. 1x 'this_week'.
 - Mindestens 1 Umsatzhebel, mindestens 1 Effizienz-/Funnel-Hebel.
 - Bevorzuge: Umsatz/Visit, AOV, Zielabweichung, 7-Tage-Momentum, Wochentagsmuster.
@@ -1380,7 +1730,9 @@ Regeln:
 
     if force_fallback:
         ms = _record_metric("recommendations", started, "fallback", True)
-        return _local_recommendations_fallback(ms, source_data)
+        response = _local_recommendations_fallback(ms, source_data)
+        _record_ai_audit(db, current_user, "ai_recommendation_fallback", "Forced local fallback")
+        return response
 
     try:
         raw = await call_claude(system, prompt, max_tokens=2100)
@@ -1409,11 +1761,19 @@ Regeln:
             source="claude",
             processing_ms=ms,
         )
+        _record_ai_audit(
+            db,
+            current_user,
+            "ai_recommendation_generated",
+            f"source=claude recommendations={len(recs)}",
+        )
         _cache_set(cache_key, response)
         return response
     except Exception as exc:
         ms = _record_metric("recommendations", started, "fallback", False, str(exc))
-        return _local_recommendations_fallback(ms, source_data)
+        response = _local_recommendations_fallback(ms, source_data)
+        _record_ai_audit(db, current_user, "ai_recommendation_error_fallback", str(exc))
+        return response
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -1551,7 +1911,7 @@ async def get_forecast(
     if force_fallback:
         fc, trend, growth, conf, summary, drivers = _local_forecast(hist_values, horizon, future_dates)
         ms = _record_metric("forecast", started, "fallback", True)
-        return ForecastResponse(
+        return _with_persisted_forecast_context(db=db, metric=metric, response=ForecastResponse(
             metric=metric,
             metric_label=valid_metrics[metric],
             horizon_days=horizon,
@@ -1564,7 +1924,7 @@ async def get_forecast(
             key_drivers=drivers,
             source="fallback",
             processing_ms=ms,
-        )
+        ))
 
     hist_tail_vals = hist_values[-14:]
     hist_tail_dates = hist_dates[-14:]
@@ -1638,7 +1998,7 @@ Regeln:
         if len(forecast_points) < horizon:
             local_fc, trend, growth, conf, summary, drivers = _local_forecast(hist_values, horizon, future_dates)
             ms = _record_metric("forecast", started, "fallback", True)
-            return ForecastResponse(
+            return _with_persisted_forecast_context(db=db, metric=metric, response=ForecastResponse(
                 metric=metric,
                 metric_label=valid_metrics[metric],
                 horizon_days=horizon,
@@ -1651,10 +2011,10 @@ Regeln:
                 key_drivers=drivers,
                 source="fallback",
                 processing_ms=ms,
-            )
+            ))
 
         ms = _record_metric("forecast", started, "claude", True)
-        return ForecastResponse(
+        return _with_persisted_forecast_context(db=db, metric=metric, response=ForecastResponse(
             metric=metric,
             metric_label=valid_metrics[metric],
             horizon_days=horizon,
@@ -1667,11 +2027,11 @@ Regeln:
             key_drivers=[str(x) for x in parsed.get("key_drivers", [])],
             source="claude",
             processing_ms=ms,
-        )
+        ))
     except Exception as exc:
         local_fc, trend, growth, conf, summary, drivers = _local_forecast(hist_values, horizon, future_dates)
         ms = _record_metric("forecast", started, "fallback", False, str(exc))
-        return ForecastResponse(
+        return _with_persisted_forecast_context(db=db, metric=metric, response=ForecastResponse(
             metric=metric,
             metric_label=valid_metrics[metric],
             horizon_days=horizon,
@@ -1684,7 +2044,7 @@ Regeln:
             key_drivers=drivers,
             source="fallback",
             processing_ms=ms,
-        )
+        ))
 
 
 @router.post("/optimizer", response_model=OptimizerResponse)

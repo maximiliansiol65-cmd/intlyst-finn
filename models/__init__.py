@@ -30,9 +30,21 @@ from models.time_block import TimeBlock
 from models.work_schedule import WorkSchedule
 from models.suggestion import Suggestion
 from models.audit_log import AuditLog
+# Decision Intelligence – new models
+from models.kpi_data_point import KPIDataPoint
+from models.insight import Insight
+from models.forecast_record import ForecastRecord
+from models.scenario import Scenario
+from models.location import Location
+from models.ai_agent import AIAgent
+from models.ai_output import AIOutput
+from models.activity_log_di import ActivityLog
+from models.goals import GoalReview
+from models.mfa_secret import MfaSecret
+from models.user_session import UserSession
 
 __all__ = [
-    "Base", "DailyMetrics", "ActionLog", "Goal", "Notification", "Task",
+    "Base", "DailyMetrics", "ActionLog", "Goal", "GoalReview", "Notification", "Task",
     "Funnel", "FunnelStep", "CustomKPI", "EmailPreferences", "VerificationCode",
     "BusinessEvent", "SocialAccount", "UserIntegration", "ActionRequest",
     "User", "Workspace", "WorkspaceMembership",
@@ -54,4 +66,15 @@ __all__ = [
     "WorkSchedule",
     "Suggestion",
     "AuditLog",
+    # Decision Intelligence
+    "KPIDataPoint",
+    "Insight",
+    "ForecastRecord",
+    "Scenario",
+    "Location",
+    "AIAgent",
+    "AIOutput",
+    "ActivityLog",
+    "MfaSecret",
+    "UserSession",
 ]

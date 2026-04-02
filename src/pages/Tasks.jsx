@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useCompanyProfile } from "../contexts/CompanyProfileContext";
+import { PriorityLegend } from "../components/ui";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -439,6 +440,7 @@ export default function Tasks() {
   const [priorityFeed, setPriorityFeed] = useState(null);
   const [priorityLoading, setPriorityLoading] = useState(false);
   const [focusOnly, setFocusOnly] = useState(false);
+  const [showAllPriorities, setShowAllPriorities] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [advancingId, setAdvancingId] = useState(null);
@@ -485,6 +487,15 @@ export default function Tasks() {
   const tasksForView = focusOnly && focusIds.length ? tasks.filter((t) => focusIds.includes(t.id)) : tasks;
   const priorityLookup = new Map((priorityFeed?.all || []).map((t) => [t.id, t]));
   const tasksAugmented = tasksForView.map((t) => (priorityLookup.get(t.id) ? { ...t, ...priorityLookup.get(t.id) } : t));
+  const taskPriorityLevel = (task) => {
+    const stage = String(task.priority_stage || task.priority || "").toLowerCase();
+    if (stage === "critical") return "critical";
+    if (stage === "high") return "high";
+    if (stage === "medium") return "medium";
+    return stage || "low";
+  };
+  const prioritizedTasks = tasksAugmented.filter((task) => ["critical", "high"].includes(taskPriorityLevel(task)));
+  const visibleTasks = (showAllPriorities ? tasksAugmented : prioritizedTasks).slice(0, 5);
 
   const total          = tasksAugmented.length;
   const openCount      = tasksAugmented.filter((t) => t.status === "open").length;
@@ -499,7 +510,7 @@ export default function Tasks() {
     count: tasksAugmented.filter((task) => task.status !== "done" && inferRole(task) === rule.label).length,
   }));
 
-  const byStatus = (status) => tasksAugmented.filter((t) => t.status === status);
+  const byStatus = (status) => visibleTasks.filter((t) => t.status === status);
 
   // ── Create ────────────────────────────────────────────────────────────────
 
@@ -800,12 +811,23 @@ export default function Tasks() {
               Automatisch priorisiert nach Geschäftsimpact und passend für diese Unternehmensversion.
             </div>
           </div>
-          <button
-            className={`btn ${focusOnly ? "btn-secondary" : "btn-primary"}`}
-            onClick={() => setFocusOnly((v) => !v)}
-          >
-            {focusOnly ? profile.tasks.resetLabel : profile.tasks.focusLabel}
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              className={`btn ${focusOnly ? "btn-secondary" : "btn-primary"}`}
+              onClick={() => setFocusOnly((v) => !v)}
+            >
+              {focusOnly ? profile.tasks.resetLabel : profile.tasks.focusLabel}
+            </button>
+            <button
+              className={`btn ${showAllPriorities ? "btn-secondary" : "btn-primary"}`}
+              onClick={() => setShowAllPriorities((v) => !v)}
+            >
+              {showAllPriorities ? "Fokus anzeigen" : "Mittel/Niedrig einblenden"}
+            </button>
+          </div>
+        </div>
+        <div style={{ marginTop: "var(--s-3)" }}>
+          <PriorityLegend />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "var(--s-3)", marginTop: "var(--s-3)" }}>

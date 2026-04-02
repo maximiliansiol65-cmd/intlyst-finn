@@ -120,6 +120,94 @@ DEFAULT_PERMISSIONS = {
         "customers":  {"can_view": True,  "can_edit": True,  "can_delete": False},
         "settings":   {"can_view": False, "can_edit": False, "can_delete": False},
     },
+    # ── CEO / owner: full access ─────────────────────────────────────────────
+    "ceo": {
+        "dashboard":  {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "insights":   {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "tasks":      {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "alerts":     {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "data":       {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "market":     {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "customers":  {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "settings":   {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "forecasts":  {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "approvals":  {"can_view": True,  "can_edit": True,  "can_delete": True},
+    },
+    "owner": {  # alias for ceo
+        "dashboard":  {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "insights":   {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "tasks":      {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "alerts":     {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "data":       {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "market":     {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "customers":  {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "settings":   {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "forecasts":  {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "approvals":  {"can_view": True,  "can_edit": True,  "can_delete": True},
+    },
+    # ── Department heads (COO / CMO / CFO): team + reporting + approvals ────
+    "coo": {
+        "dashboard":  {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "insights":   {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "tasks":      {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "alerts":     {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "data":       {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "market":     {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "customers":  {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "settings":   {"can_view": True,  "can_edit": False, "can_delete": False},
+        "forecasts":  {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "approvals":  {"can_view": True,  "can_edit": True,  "can_delete": False},
+    },
+    "cmo": {
+        "dashboard":  {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "insights":   {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "tasks":      {"can_view": True,  "can_edit": True,  "can_delete": True},
+        "alerts":     {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "data":       {"can_view": True,  "can_edit": False, "can_delete": False},
+        "market":     {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "customers":  {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "settings":   {"can_view": False, "can_edit": False, "can_delete": False},
+        "forecasts":  {"can_view": True,  "can_edit": False, "can_delete": False},
+        "approvals":  {"can_view": True,  "can_edit": True,  "can_delete": False},
+    },
+    "cfo": {
+        "dashboard":  {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "insights":   {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "tasks":      {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "alerts":     {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "data":       {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "market":     {"can_view": True,  "can_edit": False, "can_delete": False},
+        "customers":  {"can_view": True,  "can_edit": False, "can_delete": False},
+        "settings":   {"can_view": True,  "can_edit": False, "can_delete": False},
+        "forecasts":  {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "approvals":  {"can_view": True,  "can_edit": True,  "can_delete": False},
+    },
+    # ── Strategist: read insights + forecasts, no edit on critical data ──────
+    "strategist": {
+        "dashboard":  {"can_view": True,  "can_edit": False, "can_delete": False},
+        "insights":   {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "tasks":      {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "alerts":     {"can_view": True,  "can_edit": False, "can_delete": False},
+        "data":       {"can_view": True,  "can_edit": False, "can_delete": False},
+        "market":     {"can_view": True,  "can_edit": False, "can_delete": False},
+        "customers":  {"can_view": True,  "can_edit": False, "can_delete": False},
+        "settings":   {"can_view": False, "can_edit": False, "can_delete": False},
+        "forecasts":  {"can_view": True,  "can_edit": False, "can_delete": False},
+        "approvals":  {"can_view": True,  "can_edit": False, "can_delete": False},
+    },
+    # ── Assistant: own plan + tasks, no approvals ────────────────────────────
+    "assistant": {
+        "dashboard":  {"can_view": True,  "can_edit": False, "can_delete": False},
+        "insights":   {"can_view": True,  "can_edit": False, "can_delete": False},
+        "tasks":      {"can_view": True,  "can_edit": True,  "can_delete": False},
+        "alerts":     {"can_view": False, "can_edit": False, "can_delete": False},
+        "data":       {"can_view": False, "can_edit": False, "can_delete": False},
+        "market":     {"can_view": False, "can_edit": False, "can_delete": False},
+        "customers":  {"can_view": False, "can_edit": False, "can_delete": False},
+        "settings":   {"can_view": False, "can_edit": False, "can_delete": False},
+        "forecasts":  {"can_view": False, "can_edit": False, "can_delete": False},
+        "approvals":  {"can_view": False, "can_edit": False, "can_delete": False},
+    },
 }
 
 
@@ -178,8 +266,9 @@ def invite_member(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Nur Admins können Mitglieder einladen.")
 
-    if body.role not in ("admin", "manager", "member"):
-        raise HTTPException(status_code=400, detail="Rolle muss 'admin', 'manager' oder 'member' sein.")
+    VALID_INVITE_ROLES = {"admin", "manager", "member", "ceo", "coo", "cmo", "cfo", "strategist", "assistant"}
+    if body.role not in VALID_INVITE_ROLES:
+        raise HTTPException(status_code=400, detail=f"Ungültige Rolle. Erlaubt: {', '.join(sorted(VALID_INVITE_ROLES))}")
 
     existing = db.query(User).filter(User.email == body.email.lower()).first()
     workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()

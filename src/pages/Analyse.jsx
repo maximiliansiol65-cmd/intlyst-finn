@@ -17,7 +17,9 @@ import {
   SkeletonCard,
   Badge,
   Card,
+  PriorityLegend,
 } from "../components/ui";
+import { buildAdvisoryBriefFromInsight } from "../utils/advisorLens";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -51,6 +53,13 @@ const INSIGHT_TYPE_CONFIG = {
   risk:        { label: "Risiko",   badgeVariant: "warning", borderColor: "var(--c-warning)" },
 };
 
+const PRIORITY_CONFIG = {
+  critical: { label: "Kritisch", variant: "danger",  borderColor: "var(--c-danger)" },
+  high:     { label: "Hoch",     variant: "warning", borderColor: "var(--c-warning)" },
+  medium:   { label: "Mittel",   variant: "info",    borderColor: "var(--c-primary)" },
+  low:      { label: "Niedrig",  variant: "neutral", borderColor: "var(--c-border)" },
+};
+
 const SEASON_CONFIG = {
   high:   { label: "Hochsaison",  badgeVariant: "success" },
   normal: { label: "Normal",      badgeVariant: "neutral" },
@@ -72,6 +81,24 @@ function fmtAxisDate(dateStr) {
   } catch {
     return String(dateStr);
   }
+}
+
+function normalizeInsightPriority(insight) {
+  const explicit = String(insight?.priority || "").toLowerCase();
+  if (PRIORITY_CONFIG[explicit]) return explicit;
+  const impact = Number(insight?.impact_pct || 0);
+  const confidence = Number(insight?.confidence || 0);
+  if (impact >= 15 && confidence >= 70) return "critical";
+  if (impact >= 10) return "high";
+  if (impact >= 5) return "medium";
+  return "low";
+}
+
+function priorityOrder(priority) {
+  if (priority === "critical") return 0;
+  if (priority === "high") return 1;
+  if (priority === "medium") return 2;
+  return 3;
 }
 
 // ── Shared UI ──────────────────────────────────────────────────────────────────
@@ -105,6 +132,13 @@ function ErrorState({ message, onRetry }) {
 function AnalyseInsightCard({ insight }) {
   const [open, setOpen] = useState(false);
   const cfg = INSIGHT_TYPE_CONFIG[insight.type] ?? INSIGHT_TYPE_CONFIG.opportunity;
+  const priority = normalizeInsightPriority(insight);
+  const prioCfg = PRIORITY_CONFIG[priority] ?? PRIORITY_CONFIG.medium;
+  const impactLevel = String(insight.impact_level || insight.impact || "").toLowerCase() || "medium";
+  const confidenceLevel = String(insight.confidence_level || "").toLowerCase()
+    || (insight.confidence >= 75 ? "high" : insight.confidence >= 60 ? "medium" : "low");
+  const timeFactor = insight.time_factor || "this_month";
+  const advisory = buildAdvisoryBriefFromInsight({ ...insight, priority });
 
   function toggle() {
     setOpen((v) => !v);
@@ -140,53 +174,40 @@ function AnalyseInsightCard({ insight }) {
       >
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* Badge row */}
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--s-2)", marginBottom: "var(--s-2)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s-2)", marginBottom: "var(--s-2)", flexWrap: "wrap" }}>
+            <Badge variant={prioCfg.variant}>{prioCfg.label}</Badge>
             <Badge variant={cfg.badgeVariant}>{cfg.label}</Badge>
+            <Badge variant="info">{advisory.ownerLabel}</Badge>
+            <span style={{ fontSize: "var(--text-xs)", color: "var(--c-text-3)" }}>
+              Impact: {impactLevel} · Confidence: {confidenceLevel} · Zeit: {timeFactor}
+            </span>
           </div>
 
-          {/* Title */}
-          <div
-            style={{
-              fontSize: "var(--text-md)",
-              fontWeight: 600,
-              color: "var(--c-text)",
-              lineHeight: 1.4,
-              marginBottom: "var(--s-2)",
-            }}
-          >
-            {insight.title}
+          <div style={{ display: "grid", gap: "var(--s-2)" }}>
+            <div>
+              <div className="label" style={{ marginBottom: 4 }}>Dashboard-Kurzformat</div>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text)", lineHeight: 1.55 }}>
+                {advisory.primaryMetric}: {advisory.dashboardSummary}
+              </div>
+            </div>
+            <div>
+              <div className="label" style={{ marginBottom: 4 }}>Hauptursache</div>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.55 }}>
+                {advisory.weightedCauses.primary.label}
+                {advisory.weightedCauses.primary.score != null && (
+                  <span style={{ marginLeft: 8, fontSize: "var(--text-xs)", color: "var(--c-text-3)" }}>
+                    {advisory.weightedCauses.primary.score}% Einfluss
+                  </span>
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="label" style={{ marginBottom: 4 }}>Empfehlung</div>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.55 }}>
+                {advisory.recommendation.immediate}
+              </div>
+            </div>
           </div>
-
-          {/* Description */}
-          {insight.description && (
-            <div
-              style={{
-                fontSize: "var(--text-sm)",
-                color: "var(--c-text-2)",
-                lineHeight: 1.6,
-              }}
-            >
-              {insight.description}
-            </div>
-          )}
-
-          {/* Evidence box */}
-          {insight.evidence && (
-            <div
-              style={{
-                marginTop: "var(--s-3)",
-                padding: "var(--s-2) var(--s-3)",
-                background: "var(--c-surface-3)",
-                borderRadius: "var(--r-xs)",
-                fontFamily: "var(--font-mono)",
-                fontSize: "var(--text-xs)",
-                color: "var(--c-text-2)",
-                lineHeight: 1.65,
-              }}
-            >
-              {insight.evidence}
-            </div>
-          )}
         </div>
 
         {/* Chevron */}
@@ -214,32 +235,104 @@ function AnalyseInsightCard({ insight }) {
         </svg>
       </div>
 
-      {/* Expandable action section */}
+      {/* Expandable detail section */}
       <div
         style={{
-          maxHeight: open ? "400px" : "0px",
+          maxHeight: open ? "1400px" : "0px",
           overflow: "hidden",
           transition: "max-height var(--dur-slow) var(--ease-out)",
         }}
       >
-        {insight.action && (
-          <div
-            style={{
-              marginTop: "var(--s-3)",
-              padding: "var(--s-3) var(--s-4)",
-              background: "var(--c-surface-2)",
-              borderRadius: "var(--r-sm)",
-              borderLeft: `3px solid ${cfg.borderColor}`,
-            }}
-          >
-            <div className="label" style={{ marginBottom: "var(--s-2)" }}>
-              Empfohlene Maßnahme
-            </div>
-            <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.65 }}>
-              {insight.action}
-            </div>
+        <div
+          style={{
+            marginTop: "var(--s-3)",
+            padding: "var(--s-3) var(--s-4)",
+            background: "var(--c-surface-2)",
+            borderRadius: "var(--r-sm)",
+            borderLeft: `3px solid ${cfg.borderColor}`,
+            display: "grid",
+            gap: "var(--s-3)",
+          }}
+        >
+          <div className="grid-2">
+            <Card style={{ padding: "var(--s-3)" }}>
+              <div className="label" style={{ marginBottom: 6 }}>Analyse</div>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.65 }}>{advisory.analysis}</div>
+            </Card>
+            <Card style={{ padding: "var(--s-3)" }}>
+              <div className="label" style={{ marginBottom: 6 }}>Einordnung</div>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.65 }}>{advisory.assessment}</div>
+            </Card>
+            <Card style={{ padding: "var(--s-3)" }}>
+              <div className="label" style={{ marginBottom: 6 }}>Benchmark</div>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.65 }}>{advisory.benchmarkNote}</div>
+            </Card>
+            <Card style={{ padding: "var(--s-3)" }}>
+              <div className="label" style={{ marginBottom: 6 }}>Forecast</div>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.65 }}>{advisory.forecastNote}</div>
+            </Card>
           </div>
-        )}
+
+          <Card style={{ padding: "var(--s-3)" }}>
+            <div className="label" style={{ marginBottom: 8 }}>Ursachen priorisiert nach Business-Impact</div>
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.6 }}>
+                <strong>Hauptursache:</strong> {advisory.weightedCauses.primary.label}
+                {advisory.weightedCauses.primary.score != null ? ` (${advisory.weightedCauses.primary.score}% Einfluss)` : ""}
+              </div>
+              {advisory.weightedCauses.secondary.length > 0 && (
+                <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.6 }}>
+                  <strong>Nebenursachen:</strong> {advisory.weightedCauses.secondary.map((cause) => `${cause.label}${cause.score != null ? ` (${cause.score}%)` : ""}`).join(", ")}
+                </div>
+              )}
+              {advisory.weightedCauses.amplifiers.length > 0 && (
+                <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.6 }}>
+                  <strong>Verstärkende Faktoren:</strong> {advisory.weightedCauses.amplifiers.map((cause) => `${cause.label}${cause.score != null ? ` (${cause.score}%)` : ""}`).join(", ")}
+                </div>
+              )}
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.6 }}>
+                <strong>Ursache-Wirkung-Kette:</strong> {advisory.weightedCauses.primary.label} → {advisory.primaryMetric} → Management-Handlungsbedarf.
+              </div>
+            </div>
+          </Card>
+
+          <div className="grid-2">
+            <Card style={{ padding: "var(--s-3)" }}>
+              <div className="label" style={{ marginBottom: 6 }}>7 Tage</div>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.65 }}>{advisory.periods.sevenDays}</div>
+            </Card>
+            <Card style={{ padding: "var(--s-3)" }}>
+              <div className="label" style={{ marginBottom: 6 }}>30 Tage</div>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.65 }}>{advisory.periods.thirtyDays}</div>
+            </Card>
+            <Card style={{ padding: "var(--s-3)" }}>
+              <div className="label" style={{ marginBottom: 6 }}>12 Monate</div>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.65 }}>{advisory.periods.twelveMonths}</div>
+            </Card>
+            <Card style={{ padding: "var(--s-3)" }}>
+              <div className="label" style={{ marginBottom: 6 }}>AI-Rolle</div>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.65 }}>
+                {advisory.ownerLabel}: verantwortlich fuer Bewertung, Prioritaet und naechste Eskalation.
+              </div>
+            </Card>
+          </div>
+
+          <div className="grid-2">
+            <Card style={{ padding: "var(--s-3)", borderLeft: "3px solid var(--c-danger)" }}>
+              <div className="label" style={{ marginBottom: 6 }}>Sofort</div>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.65 }}>{advisory.recommendation.immediate}</div>
+            </Card>
+            <Card style={{ padding: "var(--s-3)", borderLeft: "3px solid var(--c-warning)" }}>
+              <div className="label" style={{ marginBottom: 6 }}>Mittelfristig</div>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.65 }}>{advisory.recommendation.midTerm}</div>
+            </Card>
+          </div>
+
+          <Card style={{ padding: "var(--s-3)", borderLeft: "3px solid var(--c-primary)" }}>
+            <div className="label" style={{ marginBottom: 6 }}>Langfristig</div>
+            <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)", lineHeight: 1.65 }}>{advisory.recommendation.strategic}</div>
+          </Card>
+        </div>
       </div>
     </div>
   );
@@ -252,6 +345,7 @@ function AnalyseTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [showAllPriorities, setShowAllPriorities] = useState(false);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -319,12 +413,23 @@ function AnalyseTab() {
   if (!data) return null;
 
   const rawInsights = data.insights ?? data.analysis ?? [];
-  const insights = [...rawInsights].sort((a, b) => {
+  const enrichedInsights = rawInsights.map((insight) => ({
+    ...insight,
+    priority: insight.priority || normalizeInsightPriority(insight),
+  }));
+  const insights = [...enrichedInsights].sort((a, b) => {
     const order = profile.analysis.prioritizedInsightTypes || [];
     const left = order.indexOf(a.type);
     const right = order.indexOf(b.type);
-    return (left === -1 ? 99 : left) - (right === -1 ? 99 : right);
+    if (left !== right) {
+      return (left === -1 ? 99 : left) - (right === -1 ? 99 : right);
+    }
+    const prio = priorityOrder(a.priority) - priorityOrder(b.priority);
+    if (prio !== 0) return prio;
+    return (b.impact_pct || 0) - (a.impact_pct || 0);
   });
+  const focusInsights = insights.filter((insight) => ["critical", "high"].includes(insight.priority));
+  const visibleInsights = (showAllPriorities ? insights : focusInsights).slice(0, 5);
   const score = data.score ?? data.health_score ?? 0;
 
   return (
@@ -367,10 +472,24 @@ function AnalyseTab() {
 
       {/* Insight grid */}
       {insights.length > 0 ? (
-        <div className="grid-2">
-          {insights.map((insight, i) => (
-            <AnalyseInsightCard key={insight.id ?? i} insight={insight} />
-          ))}
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--s-3)", flexWrap: "wrap", gap: "var(--s-2)" }}>
+            <div className="label">Fokus: Kritisch + Hoch (max. 5)</div>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setShowAllPriorities((v) => !v)}
+            >
+              {showAllPriorities ? "Fokus anzeigen" : "Mittel/Niedrig einblenden"}
+            </button>
+          </div>
+          <div style={{ marginBottom: "var(--s-3)" }}>
+            <PriorityLegend />
+          </div>
+          <div className="grid-2">
+            {visibleInsights.map((insight, i) => (
+              <AnalyseInsightCard key={insight.id ?? i} insight={insight} />
+            ))}
+          </div>
         </div>
       ) : (
         <div className="empty-state">
@@ -1050,15 +1169,16 @@ function MarktTab() {
           )}
 
           {/* Insights */}
-          {(data.insights ?? []).length > 0 && (
+          {visibleInsights.length > 0 && (
             <section>
               <div className="section-header" style={{ marginBottom: "var(--s-3)" }}>
                 <span className="label">KI-Insights</span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-2)" }}>
-                {(data.insights ?? []).map((ins, i) => {
+                {visibleInsights.map((ins, i) => {
                   const cfg =
                     INSIGHT_TYPE_CONFIG[ins.type] ?? INSIGHT_TYPE_CONFIG.opportunity;
+                  const prio = PRIORITY_CONFIG[ins.priority] ?? PRIORITY_CONFIG.medium;
                   return (
                     <div
                       key={i}
@@ -1077,6 +1197,7 @@ function MarktTab() {
                           marginBottom: ins.description ? "var(--s-2)" : 0,
                         }}
                       >
+                        <Badge variant={prio.variant}>{prio.label}</Badge>
                         <Badge variant={cfg.badgeVariant}>{cfg.label}</Badge>
                         <span
                           style={{
@@ -1085,7 +1206,7 @@ function MarktTab() {
                             color: "var(--c-text)",
                           }}
                         >
-                          {ins.title}
+                          {ins.problem || ins.title}
                         </span>
                       </div>
                       {ins.description && (

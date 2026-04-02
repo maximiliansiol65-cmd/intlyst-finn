@@ -5,6 +5,7 @@ export { TabBar } from "./TabBar";
 export { Sheet } from "./Sheet";
 export { KPICard } from "./KPICard";
 export { HealthRing } from "./HealthRing";
+export { default as PriorityLegend } from "./PriorityLegend";
 export { SkeletonCard, SkeletonLine } from "./SkeletonCard";
 export { InsightCard } from "./InsightCard";
 export { MilestoneCelebration } from "./MilestoneCelebration";
