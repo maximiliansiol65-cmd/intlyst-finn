@@ -4,16 +4,16 @@ import { useAuth } from "./AuthContext";
 // ── Feature-Matrix pro Plan ───────────────────────────────────────────────────
 export const PLAN_FEATURES = {
   trial: {
-    routes:   ["/", "/tasks", "/settings", "/mehr"],
+    routes:   ["/", "/tasks", "/settings", "/mehr", "/command", "/planner", "/team"],
     features: ["dashboard", "tasks"],
   },
   standard: {
-    routes:   ["/", "/tasks", "/alerts", "/reports", "/mehr", "/settings"],
+    routes:   ["/", "/tasks", "/alerts", "/reports", "/mehr", "/settings", "/command", "/planner", "/team"],
     features: ["dashboard", "tasks", "alerts", "goals", "reports", "kpis", "chart"],
   },
   team_standard: {
     routes:   ["/", "/tasks", "/alerts", "/reports", "/mehr", "/settings",
-               "/analyse", "/wachstum", "/kunden", "/standort", "/market"],
+               "/analyse", "/wachstum", "/kunden", "/standort", "/market", "/command", "/planner", "/team"],
     features: ["dashboard", "tasks", "alerts", "goals", "reports", "kpis", "chart",
                "analyse", "wachstum", "kunden", "standort", "market", "team"],
   },
