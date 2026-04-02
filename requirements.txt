@@ -1,0 +1,22 @@
+fastapi==0.104.1
+uvicorn==0.24.0
+sqlalchemy>=2.0.40,<2.1
+python-multipart==0.0.6
+httpx==0.27.2
+python-dotenv==1.0.1
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-jose[cryptography]==3.5.0
+slowapi==0.1.9
+pydantic[email]
+apscheduler==3.10.4
+
+# --- Analyse-Engine (Schicht 2–3) ---
+numpy>=1.24.0
+scipy>=1.11.0
+
+# Zeitreihenanalyse (Schicht 3): STL, ADF, ARIMA
+statsmodels>=0.14.0
+
+# Changepoint Detection (Schicht 3): PELT-Algorithmus
+ruptures>=1.1.7

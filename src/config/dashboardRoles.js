@@ -1,0 +1,61 @@
+const ROLE_COPY = {
+  ceo: {
+    assistantName: "INTLYST AI-CEO",
+    connectedLabel: "Verbunden mit deinen Unternehmensdaten",
+    emptyPrompt: "Stell mir eine Frage zu deinen Daten",
+    placeholder: "Frag den AI-CEO…",
+    insightsLabel: "CEO-Analyse",
+    recommendationsLabel: "CEO-Empfehlungen",
+    summaryLabel: "Management-Zusammenfassung",
+    teamLabel: "AI-Team",
+    teamDescription: "Analysiert, priorisiert, bewertet und strukturiert wie ein Management-Team.",
+  },
+  cmo: {
+    assistantName: "INTLYST AI-CMO",
+    connectedLabel: "Verbunden mit Marketing-, Kampagnen- und Performance-Daten",
+    emptyPrompt: "Frag nach Kampagnen, Content, Budget oder Marketing-ROI",
+    placeholder: "Frag den AI-CMO…",
+    insightsLabel: "CMO-Analyse",
+    recommendationsLabel: "CMO-Empfehlungen",
+    summaryLabel: "Marketing-Zusammenfassung",
+    teamLabel: "AI-CMO",
+    teamDescription: "Steuert Marketingstrategie, Content, Kampagnen und Performance wie ein Chief Marketing Officer.",
+  },
+  coo: {
+    assistantName: "INTLYST AI-COO",
+    connectedLabel: "Verbunden mit operativen Kennzahlen und Team-Performance",
+    emptyPrompt: "Frag nach Prioritäten, Delivery, Kapazität oder Effizienz",
+    placeholder: "Frag den AI-COO…",
+    insightsLabel: "COO-Analyse",
+    recommendationsLabel: "COO-Empfehlungen",
+    summaryLabel: "Operations-Zusammenfassung",
+    teamLabel: "AI-Operations",
+    teamDescription: "Priorisiert Abläufe, Risiken und Kapazitäten wie ein operatives Führungsteam.",
+  },
+  strategist: {
+    assistantName: "INTLYST AI-Strategist",
+    connectedLabel: "Verbunden mit Wachstums-, Markt- und Strategiedaten",
+    emptyPrompt: "Frag nach Wachstum, Szenarien oder strategischen Hebeln",
+    placeholder: "Frag den Strategist…",
+    insightsLabel: "Strategie-Analyse",
+    recommendationsLabel: "Strategie-Empfehlungen",
+    summaryLabel: "Strategie-Zusammenfassung",
+    teamLabel: "AI-Strategist",
+    teamDescription: "Verdichtet Chancen, Risiken und Wachstumsoptionen für strategische Entscheidungen.",
+  },
+  assistant: {
+    assistantName: "INTLYST AI-Assistent",
+    connectedLabel: "Verbunden mit deinen Arbeits- und Leistungsdaten",
+    emptyPrompt: "Frag nach Aufgaben, Prioritäten oder dem nächsten Schritt",
+    placeholder: "Frag INTLYST AI…",
+    insightsLabel: "AI-Analyse",
+    recommendationsLabel: "AI-Empfehlungen",
+    summaryLabel: "Zusammenfassung",
+    teamLabel: "AI-Assistent",
+    teamDescription: "Hilft dir, die wichtigsten Aufgaben und Hebel klar zu priorisieren.",
+  },
+};
+
+export function getDashboardRoleCopy(profile) {
+  return ROLE_COPY[profile?.dashboardRole] || ROLE_COPY.ceo;
+}
