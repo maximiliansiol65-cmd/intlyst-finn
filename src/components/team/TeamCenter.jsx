@@ -31,6 +31,11 @@ export default function TeamCenter() {
   const [scheduleLoading, setScheduleLoading] = useState(true);
   const [scheduleSaving, setScheduleSaving] = useState(false);
   const [membershipErrorShown, setMembershipErrorShown] = useState(false);
+  const [inlineError, setInlineError] = useState("");
+
+  function isAuthError(response) {
+    return response?.status === 401 || response?.status === 403;
+  }
 
   function buildAuthHeaders({ includeWorkspace = true } = {}) {
     const headers = { ...authHeader() };
@@ -66,6 +71,10 @@ export default function TeamCenter() {
     return response;
   }
 
+  function reportInlineError(message) {
+    setInlineError((current) => current || message);
+  }
+
   useEffect(() => {
     if (!token && !authLoading) {
       setLoading(false);
@@ -84,15 +93,17 @@ export default function TeamCenter() {
     setLoading(true);
     try {
       const res = await fetchWithWorkspaceFallback("/api/team/members");
+      if (isAuthError(res)) return;
       if (!res.ok) throw new Error();
       const data = await res.json();
       setMembers(Array.isArray(data) ? data : data.members ?? []);
+      setInlineError("");
     } catch {
-      toast.error("Team konnte nicht geladen werden.");
+      if (!authExpired) reportInlineError("Team-Daten konnten gerade nicht geladen werden.");
     } finally {
       setLoading(false);
     }
-  }, [authHeader, toast]);
+  }, [authExpired, authHeader, toast]);
 
   useEffect(() => { fetchMembers(); }, [fetchMembers]);
 
@@ -104,6 +115,7 @@ export default function TeamCenter() {
     setCompaniesLoading(true);
     try {
       const res = await fetchWithWorkspaceFallback("/api/companies");
+      if (isAuthError(res)) return;
       if (!res.ok) throw new Error();
       const data = await res.json();
       const items = Array.isArray(data) ? data : data.items ?? [];
@@ -113,12 +125,13 @@ export default function TeamCenter() {
         setCompanyName(first.name ?? "");
         setCompanySlug(first.slug ?? "");
       }
+      setInlineError("");
     } catch {
-      toast.error("Firma konnte nicht geladen werden.");
+      if (!authExpired) reportInlineError("Ein Teil der Team-Daten konnte gerade nicht geladen werden.");
     } finally {
       setCompaniesLoading(false);
     }
-  }, [authHeader, toast]);
+  }, [authExpired, authHeader, toast]);
 
   useEffect(() => { fetchCompanies(); }, [fetchCompanies]);
 
@@ -130,6 +143,7 @@ export default function TeamCenter() {
     setScheduleLoading(true);
     try {
       const res = await fetchWithWorkspaceFallback("/api/work-schedules");
+      if (isAuthError(res)) return;
       if (!res.ok) throw new Error();
       const data = await res.json();
       const items = Array.isArray(data) ? data : data.items ?? [];
@@ -150,12 +164,13 @@ export default function TeamCenter() {
           },
         });
       }
+      setInlineError("");
     } catch {
-      toast.error("Arbeitszeiten konnten nicht geladen werden.");
+      if (!authExpired) reportInlineError("Arbeitszeiten im Team-Bereich konnten gerade nicht geladen werden.");
     } finally {
       setScheduleLoading(false);
     }
-  }, [authHeader, toast]);
+  }, [authExpired, authHeader, toast]);
 
   useEffect(() => { fetchSchedule(); }, [fetchSchedule]);
 
@@ -167,15 +182,17 @@ export default function TeamCenter() {
     setTeamsLoading(true);
     try {
       const res = await fetchWithWorkspaceFallback("/api/teams");
+      if (isAuthError(res)) return;
       if (!res.ok) throw new Error();
       const data = await res.json();
       setTeams(Array.isArray(data) ? data : data.items ?? []);
+      setInlineError("");
     } catch {
-      toast.error("Teams konnten nicht geladen werden.");
+      if (!authExpired) reportInlineError("Teams konnten gerade nicht geladen werden.");
     } finally {
       setTeamsLoading(false);
     }
-  }, [authHeader, toast]);
+  }, [authExpired, authHeader, toast]);
 
   useEffect(() => { fetchTeams(); }, [fetchTeams]);
 
@@ -189,6 +206,7 @@ export default function TeamCenter() {
       if (active) setMembershipsLoading(true);
       try {
         const res = await fetchWithWorkspaceFallback("/api/teams/memberships");
+        if (isAuthError(res)) return;
         if (!res.ok) {
           if (res.status === 404 || res.status === 422) {
             if (active) setMemberships([]);
@@ -198,9 +216,10 @@ export default function TeamCenter() {
         }
         const data = await res.json();
         if (active) setMemberships(Array.isArray(data) ? data : data.items ?? []);
+        if (active) setInlineError("");
       } catch {
-        if (!membershipErrorShown) {
-          toast.error("Team-Zuordnungen konnten nicht geladen werden.");
+        if (!membershipErrorShown && !authExpired) {
+          reportInlineError("Team-Zuordnungen konnten gerade nicht geladen werden.");
           if (active) setMembershipErrorShown(true);
         }
       } finally {
@@ -209,7 +228,7 @@ export default function TeamCenter() {
     }
     run();
     return () => { active = false; };
-  }, [token]);
+  }, [authExpired, membershipErrorShown, token, toast]);
 
   async function inviteMember() {
     if (!inviteEmail) return;
@@ -522,9 +541,9 @@ export default function TeamCenter() {
     }
   }
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)" }}>
-      {authExpired && (
+  if (authExpired) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)" }}>
         <div className="card" style={{ padding: "var(--s-6)", borderLeft: "3px solid var(--c-danger)" }}>
           <div className="section-title" style={{ marginBottom: "var(--s-2)", color: "var(--c-danger)" }}>
             Sitzung abgelaufen
@@ -536,8 +555,13 @@ export default function TeamCenter() {
             Jetzt neu anmelden
           </button>
         </div>
-      )}
-      {!token && !authLoading && !authExpired && (
+      </div>
+    );
+  }
+
+  if (!token && !authLoading) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)" }}>
         <div className="card" style={{ padding: "var(--s-6)", borderLeft: "3px solid var(--c-warning)" }}>
           <div className="section-title" style={{ marginBottom: "var(--s-2)", color: "var(--c-warning)" }}>
             Bitte anmelden
@@ -549,7 +573,22 @@ export default function TeamCenter() {
             Zum Login
           </button>
         </div>
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)" }}>
+      {inlineError ? (
+        <div className="card" style={{ padding: "var(--s-5)", borderLeft: "3px solid var(--c-warning)" }}>
+          <div className="section-title" style={{ marginBottom: "var(--s-2)", color: "var(--c-warning)" }}>
+            Team-Hinweis
+          </div>
+          <div style={{ fontSize: "var(--text-sm)", color: "var(--c-text-2)" }}>
+            {inlineError}
+          </div>
+        </div>
+      ) : null}
       <div className="card" style={{ padding: "var(--s-6)" }}>
         <div className="section-title" style={{ marginBottom: "var(--s-4)" }}>Firma</div>
         {companiesLoading ? (

@@ -16,12 +16,14 @@ Base.metadata.create_all(bind=engine)
 
 
 class WorkScheduleCreate(BaseModel):
+    user_id: Optional[int] = None
     timezone: Optional[str] = "Europe/Berlin"
     weekly_hours_json: Optional[str] = None
     exceptions_json: Optional[str] = None
 
 
 class WorkScheduleUpdate(BaseModel):
+    user_id: Optional[int] = None
     timezone: Optional[str] = None
     weekly_hours_json: Optional[str] = None
     exceptions_json: Optional[str] = None
@@ -59,7 +61,7 @@ def create_work_schedule(
     workspace_id: int = Depends(get_current_workspace_id),
 ):
     row = WorkSchedule(
-        user_id=current_user.id,
+        user_id=body.user_id or current_user.id,
         workspace_id=workspace_id,
         timezone=body.timezone,
         weekly_hours_json=body.weekly_hours_json,
