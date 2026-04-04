@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Index, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text
 
 from models.base import Base
 
@@ -18,7 +18,7 @@ class ActivityLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     workspace_id = Column(Integer, nullable=False, default=1, index=True)
-    user_id = Column(Integer, nullable=True, index=True)         # Human actor (nullable for AI actions)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     ai_agent_role = Column(String(30), nullable=True)            # AI actor role, if AI-triggered
     action_type = Column(String(50), nullable=False)             # create|update|delete|approve|generate...
     entity_type = Column(String(50), nullable=False, index=True) # task|goal|insight|forecast|user...

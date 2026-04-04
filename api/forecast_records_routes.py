@@ -13,7 +13,9 @@ from sqlalchemy.orm import Session
 
 from database import get_db, get_current_workspace_id
 from api.auth_routes import get_current_user, User
+from api.role_guards import require_strategist_or_above, require_manager_or_above
 from models.forecast_record import ForecastRecord
+from services.tenant_guard import require_workspace_context, assert_owns_resource
 from services.forecast_service import (
     get_forecast_records,
     compare_forecast_vs_actual,
@@ -97,9 +99,9 @@ def list_forecast_records(
     kpi_id: Optional[int] = Query(None),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_strategist_or_above),
 ):
-    workspace_id = get_current_workspace_id() or 1
+    workspace_id = require_workspace_context()
     records = get_forecast_records(db, workspace_id, kpi_name=kpi_name, kpi_id=kpi_id, limit=limit)
     return [ForecastRecordOut.from_orm_clean(r) for r in records]
 
@@ -108,9 +110,9 @@ def list_forecast_records(
 def get_vs_actual(
     forecast_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_strategist_or_above),
 ):
-    workspace_id = get_current_workspace_id() or 1
+    workspace_id = require_workspace_context()
     record = (
         db.query(ForecastRecord)
         .filter(ForecastRecord.workspace_id == workspace_id, ForecastRecord.id == forecast_id)
@@ -118,6 +120,7 @@ def get_vs_actual(
     )
     if not record:
         raise HTTPException(status_code=404, detail="Forecast record not found")
+    assert_owns_resource(getattr(record, "workspace_id"), workspace_id)
     record_id = getattr(record, "id", None)
     kpi_name = getattr(record, "kpi_name", "")
     forecast_value = getattr(record, "forecast_value", None)
@@ -141,9 +144,9 @@ def submit_actual(
     forecast_id: int,
     body: ActualValueIn,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_manager_or_above),
 ):
-    workspace_id = get_current_workspace_id() or 1
+    workspace_id = require_workspace_context()
     record = compare_forecast_vs_actual(db, workspace_id, forecast_id, body.actual_value)
     if not record:
         raise HTTPException(status_code=404, detail="Forecast record not found")

@@ -107,14 +107,14 @@ export function buildAdvisoryBriefFromInsight(insight, index = 0) {
   const delta = formatPercent(insight?.impact_pct);
   const confidence = Number.isFinite(Number(insight?.confidence)) ? `${Number(insight.confidence)}% Konfidenz` : null;
   const analysis = toSentence(
-    insight?.description,
+    insight?.what_happened || insight?.description,
     `${cleanText(insight?.title, "Ein relevantes Signal")} beeinflusst aktuell die Leistung.`,
   );
   const assessment = toSentence(
-    insight?.problem || insight?.evidence || insight?.kpi_link,
+    insight?.why_it_happened || insight?.problem || insight?.evidence || insight?.kpi_link,
     "Das Signal ist operativ relevant und sollte im KPI-Kontext bewertet werden.",
   );
-  const immediateAction = cleanText(insight?.action, "Sofortmassnahme definieren und umsetzen");
+  const immediateAction = cleanText(insight?.what_to_do || insight?.action, "Sofortmassnahme definieren und umsetzen");
   const midTermAction = cleanText(
     insight?.expected_result,
     "In den naechsten 2 bis 4 Wochen einen messbaren Zielkorridor absichern",
@@ -147,7 +147,7 @@ export function buildAdvisoryBriefFromInsight(insight, index = 0) {
     },
     prioritization: `${priority.label} - ${priority.actionLabel}${delta ? ` (${delta} moeglicher KPI-Effekt)` : ""}${confidence ? `, ${confidence}` : ""}.`,
     strategicPerspective: toSentence(
-      strategicAction,
+      insight?.what_it_means || strategicAction,
       "Wenn dieses Muster anhaelt, beeinflusst es die mittelfristige Zielerreichung direkt.",
     ),
     evidence: toSentence(
@@ -169,7 +169,7 @@ export function buildAdvisoryBriefFromInsight(insight, index = 0) {
     ownerLabel: ROLE_LABELS[ownerRole] || `AI ${ownerRole}`,
     dashboardSummary: toSentence(insight?.dashboard_summary, analysis),
     benchmarkNote: toSentence(
-      insight?.benchmark_note,
+      insight?.pattern_link || insight?.benchmark_note,
       "Benchmark-Vergleich sollte gegen internes Ziel und historische Leistung geprueft werden.",
     ),
     forecastNote: toSentence(
@@ -186,6 +186,7 @@ export function buildAdvisoryBriefFromInsight(insight, index = 0) {
 
 export function buildAdvisoryAgendaFromAnalysis(data) {
   const insights = Array.isArray(data?.insights) ? data.insights : [];
+  const topOpportunity = data?.top_opportunity || null;
   const items = insights
     .slice(0, 5)
     .map((insight, index) => buildAdvisoryBriefFromInsight(insight, index));
@@ -209,7 +210,22 @@ export function buildAdvisoryAgendaFromAnalysis(data) {
       strategic: topItem?.recommendation.strategic || "Strategischen Hebel in den Management-Rhythmus uebernehmen.",
     },
     prioritization: topItem?.prioritization || "Maximal die wichtigsten 3 bis 5 Themen gleichzeitig bearbeiten.",
-    strategicPerspective: topItem?.strategicPerspective || "Die Entwicklung wirkt auf Wachstum, Profitabilitaet oder Risiko der naechsten Wochen.",
+    strategicPerspective: toSentence(
+      topOpportunity
+        ? `${cleanText(topOpportunity.title, "Groesste Chance")}: ${cleanText(topOpportunity.why_now)} Naechster Schritt: ${cleanText(topOpportunity.recommended_action)}`
+        : topItem?.strategicPerspective,
+      "Die Entwicklung wirkt auf Wachstum, Profitabilitaet oder Risiko der naechsten Wochen.",
+    ),
+    topOpportunity: topOpportunity
+      ? {
+          title: cleanText(topOpportunity.title, "Groesste Chance"),
+          observation: toSentence(topOpportunity.observation),
+          whyNow: toSentence(topOpportunity.why_now),
+          action: toSentence(topOpportunity.recommended_action),
+          impactScore: Number.isFinite(Number(topOpportunity.impact_score)) ? Number(topOpportunity.impact_score) : null,
+          confidenceScore: Number.isFinite(Number(topOpportunity.confidence_score)) ? Number(topOpportunity.confidence_score) : null,
+        }
+      : null,
     items,
   };
 }

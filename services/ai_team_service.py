@@ -9,74 +9,50 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from datetime import datetime
 from typing import Any, Optional
 
 import httpx
 from sqlalchemy.orm import Session
 
+from services.claude_runtime import (
+    CLAUDE_API_URL,
+    build_claude_headers,
+    build_claude_payload,
+    get_claude_runtime_config,
+)
+from security_config import is_configured_secret
 from models.ai_agent import AIAgent, DEFAULT_AI_AGENTS
 from models.ai_output import AIOutput
 from models.activity_log_di import ActivityLog
+from services.decision_prompting import build_role_decision_prompt, MARKETING_SALES_DECISION_APPENDIX
+from services.ai_output_schema import (
+    STRUCTURED_OUTPUT_INSTRUCTION,
+    parse_structured_output,
+    compute_business_impact_score,
+    compute_confidence_score,
+    infer_priority_from_score,
+    get_role_historical_accuracy,
+)
+from services.ai_output_linker import AIOutputEntityLinks, resolve_ai_output_entity_links
+from services.ai_task_factory import create_tasks_from_ai_output
 
 logger = logging.getLogger(__name__)
-
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
 
 
 # ── Role-specific system prompts ──────────────────────────────────────────────
 
 _ROLE_PROMPTS: dict[str, str] = {
-    "ceo": (
-        "You are an AI CEO advisor. Analyze the provided business context and deliver:\n"
-        "1. Top 3 strategic priorities this week\n"
-        "2. Most critical risk to address\n"
-        "3. Biggest opportunity to capture\n"
-        "4. One key management decision needed\n"
-        "Be concise, direct, and executive-level. Focus on impact and urgency."
-    ),
-    "coo": (
-        "You are an AI COO advisor. Analyze the provided business context and deliver:\n"
-        "1. Top operational bottlenecks blocking performance\n"
-        "2. Resource gaps or capacity issues\n"
-        "3. Process improvements with highest ROI\n"
-        "4. Priority task sequence for the operations team\n"
-        "Focus on execution, efficiency, and removing blockers."
-    ),
+    "ceo": build_role_decision_prompt("ceo", "Strategie, Prioritaeten, Risiken, wichtigste Management-Entscheidung"),
+    "coo": build_role_decision_prompt("coo", "Bottlenecks, Sequenzierung, operative Umsetzung, Effizienz"),
     "cmo": (
-        "You are an AI CMO advisor. Analyze the provided business context and deliver:\n"
-        "1. Marketing channel performance assessment\n"
-        "2. Lead quality and conversion opportunities\n"
-        "3. Content or campaign recommendations\n"
-        "4. Audience or reach expansion potential\n"
-        "Focus on growth, brand, and revenue impact of marketing."
+        build_role_decision_prompt("cmo", "Marketing, Pipeline, Conversion, Kampagnenleistung, Wachstum")
+        + "\n\n"
+        + MARKETING_SALES_DECISION_APPENDIX
     ),
-    "cfo": (
-        "You are an AI CFO advisor. Analyze the provided business context and deliver:\n"
-        "1. Financial health assessment (cashflow, margin, P&L)\n"
-        "2. Key financial risks in the next 30 days\n"
-        "3. Budget optimization opportunities\n"
-        "4. Investment or cost-reduction recommendations\n"
-        "Be precise with numbers. Flag anything that threatens financial stability."
-    ),
-    "strategist": (
-        "You are an AI Business Strategist. Analyze the provided business context and deliver:\n"
-        "1. Market trend assessment\n"
-        "2. Competitive positioning insights\n"
-        "3. Long-term strategic opportunities (3–12 month horizon)\n"
-        "4. Strategic risks and how to mitigate them\n"
-        "Think in terms of competitive advantage, positioning, and sustainable growth."
-    ),
-    "assistant": (
-        "You are an AI Business Assistant. Based on the provided context:\n"
-        "1. Summarize the most important open items\n"
-        "2. Structure pending tasks by priority\n"
-        "3. Highlight what needs review or decision this week\n"
-        "4. Note any progress or achievements worth recognizing\n"
-        "Be organized, clear, and actionable. Help the team stay on track."
-    ),
+    "cfo": build_role_decision_prompt("cfo", "Cashflow, Marge, Budgetallokation, finanzielle Risiken"),
+    "strategist": build_role_decision_prompt("strategist", "Positionierung, Marktchancen, strukturelles Wachstum"),
+    "assistant": build_role_decision_prompt("assistant", "offene Entscheidungen, Priorisierung, naechste Schritte"),
 }
 
 
@@ -128,22 +104,110 @@ def generate_role_output(
     `context` should contain relevant KPI data, goals, tasks, and insights.
     """
     system_prompt = _get_system_prompt(db, workspace_id, role)
+    # Append JSON schema instruction so Claude returns structured output
+    system_prompt_with_schema = system_prompt + "\n\n" + STRUCTURED_OUTPUT_INSTRUCTION
     user_message = _build_context_message(context)
 
-    content = _call_claude(system_prompt, user_message)
+    raw_response = _call_claude(system_prompt_with_schema, user_message)
+
+    # Parse structured output; fall back to raw text on failure
+    structured, prose_content = parse_structured_output(raw_response)
+
+    linked_kpi_id = None
+    linked_task_id = None
+    linked_goal_id = None
+    entity_links = AIOutputEntityLinks([], [], [])
+    entity_links_payload = {"kpi_ids": [], "task_ids": [], "goal_ids": []}
+    structured_payload: dict[str, object]
+    if structured:
+        # Compute scores from data signals, not keyword matching
+        historical_acc = get_role_historical_accuracy(db, workspace_id, role)
+        impact_score = compute_business_impact_score(structured)
+        confidence_score = compute_confidence_score(structured, historical_accuracy=historical_acc)
+        priority = infer_priority_from_score(impact_score, structured.urgency)
+        output_type = structured.output_type
+        entity_links = resolve_ai_output_entity_links(
+            db,
+            workspace_id,
+            structured.affected_kpi_names or [],
+            structured.suggested_tasks or [],
+        )
+        linked_kpi_id = entity_links.kpi_ids[0] if entity_links.kpi_ids else None
+        linked_task_id = entity_links.task_ids[0] if entity_links.task_ids else None
+        linked_goal_id = entity_links.goal_ids[0] if entity_links.goal_ids else None
+        entity_links_payload = {
+            "kpi_ids": entity_links.kpi_ids,
+            "task_ids": entity_links.task_ids,
+            "goal_ids": entity_links.goal_ids,
+        }
+        structured_payload = {
+            "schema_version": "1.0",
+            "what_is_happening": structured.what_is_happening,
+            "root_cause": structured.root_cause,
+            "business_meaning": structured.business_meaning,
+            "recommended_action": structured.recommended_action,
+            "expected_outcome": structured.expected_outcome,
+            "urgency": structured.urgency,
+            "scores": {
+                "revenue_impact": structured.revenue_impact,
+                "growth_impact": structured.growth_impact,
+                "risk_impact": structured.risk_impact,
+                "team_impact": structured.team_impact,
+            },
+            "affected_kpi_names": structured.affected_kpi_names,
+            "suggested_tasks": structured.suggested_tasks,
+            "timeframe": structured.timeframe,
+            "entity_links": entity_links_payload,
+        }
+    else:
+        # Fallback: text output, use defaults
+        prose_content = raw_response
+        impact_score = 50.0
+        confidence_score = 60.0
+        priority = _infer_priority(raw_response)
+        output_type = _default_output_type(role)
+        structured_payload = {
+            "schema_version": "unstructured",
+            "raw": True,
+            "entity_links": entity_links_payload,
+        }
+
+    structured_data_json = json.dumps(structured_payload)
 
     output = AIOutput(
         workspace_id=workspace_id,
         agent_role=role,
-        output_type=_default_output_type(role),
-        content=content,
-        structured_data=json.dumps({"context_keys": list(context.keys())}),
-        priority=_infer_priority(content),
-        confidence_score=75.0,
-        impact_score=60.0,
+        output_type=output_type,
+        content=prose_content,
+        structured_data=structured_data_json,
+        priority=priority,
+        linked_task_id=linked_task_id,
+        linked_kpi_id=linked_kpi_id,
+        linked_goal_id=linked_goal_id,
+        confidence_score=confidence_score,
+        impact_score=impact_score,
         status="new",
     )
     db.add(output)
+    db.flush()
+    created_task_ids: list[int] = []
+    if structured:
+        created_task_ids = create_tasks_from_ai_output(
+            db,
+            workspace_id,
+            output,
+            structured,
+            entity_links,
+        )
+        if created_task_ids:
+            entity_links.task_ids.extend(created_task_ids)
+            entity_links_payload["task_ids"] = entity_links.task_ids
+            structured_payload["entity_links"] = entity_links_payload
+            structured_data_json = json.dumps(structured_payload)
+            output.structured_data = structured_data_json
+            if not linked_task_id:
+                linked_task_id = created_task_ids[0]
+                output.linked_task_id = linked_task_id
 
     # Update agent last_triggered_at
     agent = db.query(AIAgent).filter(
@@ -230,27 +294,28 @@ def _build_context_message(context: dict[str, Any]) -> str:
 
 def _call_claude(system_prompt: str, user_message: str) -> str:
     """Call Claude API synchronously. Returns text content."""
-    if not ANTHROPIC_API_KEY:
-        logger.warning("No ANTHROPIC_API_KEY – returning placeholder AI output")
+    api_key, claude_model = get_claude_runtime_config()
+    if not is_configured_secret(api_key, prefixes=("sk-ant-",), min_length=20):
+        logger.warning("No valid ANTHROPIC_API_KEY – returning placeholder AI output")
         return "[AI output unavailable: ANTHROPIC_API_KEY not configured]"
 
     try:
-        headers = {
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        }
-        payload = {
-            "model": CLAUDE_MODEL,
-            "max_tokens": 1024,
-            "system": system_prompt,
-            "messages": [{"role": "user", "content": user_message}],
-        }
-        with httpx.Client(timeout=30.0) as client:
-            resp = client.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload)
+        headers = build_claude_headers(api_key)
+        payload = build_claude_payload(
+            user_message,
+            model=claude_model,
+            max_tokens=1024,
+            system_prompt=system_prompt,
+        )
+        timeout = httpx.Timeout(30.0, connect=5.0)
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(CLAUDE_API_URL, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
-            return data["content"][0]["text"]
+            content = data.get("content") or []
+            if not content:
+                return "[AI analysis temporarily unavailable: empty Claude response]"
+            return str(content[0].get("text", "") or "[AI analysis temporarily unavailable: empty content]")
     except Exception as exc:
         logger.error("Claude API call failed: %s", exc)
         return f"[AI analysis temporarily unavailable: {exc}]"

@@ -332,18 +332,30 @@ def _task_kpis(task: Task) -> list[str]:
 
 def personalize_tasks(tasks: list[Task], profile: dict, scores: dict) -> list[dict]:
     prioritized = []
-    focus = profile.get("priority_focus")
+    focus = str(profile.get("priority_focus") or "").strip().lower()
     focus_scores = scores.get("kpi_focus", {})
     preferred_size = profile.get("preferred_task_size", "mittel")
 
     for task in tasks:
         base = {"high": 0.8, "medium": 0.6, "low": 0.4}.get(task.priority, 0.5)
+        priority_rank = {"high": 3, "medium": 2, "low": 1}.get(task.priority, 0)
         kpis = _task_kpis(task)
         kpi_match = max((focus_scores.get(k, 0) for k in kpis), default=0) if kpis else 0
-        if not kpi_match and focus:
-            kpi_match = 0.15 if focus in (task.description or "").lower() else 0
+
+        task_text = " ".join(filter(None, [task.title, task.description, task.goal])).lower()
+        focus_text_match = 0.15 if focus and focus in task_text else 0.0
+        if not kpi_match:
+            kpi_match = focus_text_match
+
         due_bonus = 0.1 if task.due_date and (task.due_date - datetime.utcnow().date()).days <= 3 else 0
-        predicted = min(1.0, round(base + kpi_match * 0.4 + due_bonus, 3))
+
+        recency_bonus = 0.0
+        created_at = getattr(task, "created_at", None)
+        if isinstance(created_at, datetime):
+            age_hours = max(0.0, (datetime.utcnow() - created_at).total_seconds() / 3600)
+            recency_bonus = max(0.0, 0.06 - min(age_hours / (24 * 7), 1.0) * 0.06)
+
+        predicted = min(1.0, round(base + kpi_match * 0.4 + due_bonus + recency_bonus, 3))
 
         display_size = "medium"
         if preferred_size == "kurz":
@@ -358,6 +370,8 @@ def personalize_tasks(tasks: list[Task], profile: dict, scores: dict) -> list[di
             reason_parts.append("passt zu deinem KPI-Fokus")
         if due_bonus:
             reason_parts.append("Fälligkeits-Bonus")
+        if recency_bonus:
+            reason_parts.append("aktuell und relevant")
         if not reason_parts:
             reason_parts.append("Grundpriorität der Aufgabe")
 
@@ -368,9 +382,30 @@ def personalize_tasks(tasks: list[Task], profile: dict, scores: dict) -> list[di
             "predicted_success": predicted,
             "display_size": display_size,
             "reason": "; ".join(reason_parts),
+            "_sort_kpi_match": round(kpi_match, 3),
+            "_sort_due_bonus": round(due_bonus, 3),
+            "_sort_priority": priority_rank,
+            "_sort_created_at": created_at.timestamp() if isinstance(created_at, datetime) else 0.0,
         })
 
-    prioritized.sort(key=lambda t: t["predicted_success"], reverse=True)
+    prioritized.sort(
+        key=lambda item: (
+            item["predicted_success"],
+            item["_sort_kpi_match"],
+            item["_sort_due_bonus"],
+            item["_sort_priority"],
+            item["_sort_created_at"],
+            item["id"],
+        ),
+        reverse=True,
+    )
+
+    for item in prioritized:
+        item.pop("_sort_kpi_match", None)
+        item.pop("_sort_due_bonus", None)
+        item.pop("_sort_priority", None)
+        item.pop("_sort_created_at", None)
+
     return prioritized
 
 
@@ -430,10 +465,12 @@ def build_state(db: Session, user_id: int, workspace_id: Optional[int] = None) -
     scores = compute_scores(events, stats, profile)
     _persist_profile(db, user_id, workspace_id or 1, profile, scores, last_event)
 
+    current_workspace_id = workspace_id or 1
     tasks = (
         db.query(Task)
+        .filter(Task.workspace_id == current_workspace_id)
         .filter(Task.status.in_(["open", "in_progress"]))
-        .order_by(Task.priority.desc(), Task.created_at.desc())
+        .order_by(Task.created_at.desc())
         .all()
     )
     return {

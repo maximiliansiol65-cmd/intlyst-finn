@@ -14,13 +14,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import asc, desc
 from sqlalchemy.orm import Session
 
-from database import engine, get_db
+from database import get_db
 from models.funnel import Funnel, FunnelStep
-from models.base import Base
 from api.auth_routes import User, get_current_user
 from security_config import is_configured_secret
-
-Base.metadata.create_all(bind=engine)
 
 router = APIRouter(prefix="/api/funnels", tags=["funnels"])
 logger = logging.getLogger(__name__)

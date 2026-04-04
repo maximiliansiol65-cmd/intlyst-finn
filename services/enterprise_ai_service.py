@@ -197,7 +197,14 @@ def _select_assignee(db: Session, workspace_id: Optional[int], owner_role: str) 
         return {"assigned_to": owner_role, "reason": "Keine aktiven Teammitglieder gefunden."}
 
     role_map = {row[0]: row[1] for row in member_ids}
-    tasks = db.query(Task).filter(Task.status != "done").all()
+    tasks = (
+        db.query(Task)
+        .filter(
+            Task.workspace_id == workspace_id,
+            Task.status != "done",
+        )
+        .all()
+    )
     workload: dict[str, int] = {}
     for task in tasks:
         if task.assigned_to:

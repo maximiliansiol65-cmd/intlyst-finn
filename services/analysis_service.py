@@ -357,6 +357,218 @@ def _detect_anomalies(rows: list[DailyMetrics], metric_name: str, values: list[f
     return findings
 
 
+def _window_rows(rows: list[DailyMetrics], days: int) -> list[DailyMetrics]:
+    today = date.today()
+    return [row for row in rows if (today - row.date).days <= days]
+
+
+def _metric_series(snapshot: dict, metric_key: str) -> dict:
+    metric = snapshot.get(metric_key, {}) if snapshot else {}
+    return metric if isinstance(metric, dict) else {}
+
+
+def _metric_direction(score: float, positive_threshold: float = 3.0, negative_threshold: float = -3.0) -> str:
+    if score >= positive_threshold:
+        return "up"
+    if score <= negative_threshold:
+        return "down"
+    return "stable"
+
+
+def _metric_priority_from_impact(impact_score: float) -> str:
+    if impact_score >= 85:
+        return "critical"
+    if impact_score >= 65:
+        return "high"
+    if impact_score >= 40:
+        return "medium"
+    return "low"
+
+
+def _metric_business_label(metric_key: str) -> str:
+    labels = {
+        "revenue": "Umsatz",
+        "traffic": "Traffic",
+        "conversions": "Conversions",
+        "conversion_rate": "Conversion Rate",
+        "new_customers": "Neue Kunden",
+        "aov": "Warenkorbwert",
+        "revenue_per_visit": "Umsatz pro Visit",
+        "customer_capture_rate": "Neukunden je Conversion",
+    }
+    return labels.get(metric_key, metric_key)
+
+
+def _pattern_strength(score: float) -> str:
+    if score >= 85:
+        return "sehr stark"
+    if score >= 70:
+        return "stark"
+    if score >= 50:
+        return "mittel"
+    return "schwach"
+
+
+def _detect_patterns_from_snapshots(snapshot_7: dict, snapshot_30: dict, snapshot_90: dict) -> list[dict]:
+    patterns: list[dict] = []
+    comparable_metrics = ("revenue", "traffic", "conversion_rate", "new_customers", "revenue_per_visit")
+
+    for metric_key in comparable_metrics:
+        s7 = _metric_series(snapshot_7, metric_key)
+        s30 = _metric_series(snapshot_30, metric_key)
+        s90 = _metric_series(snapshot_90, metric_key)
+        if not s7 or not s30 or not s90:
+            continue
+
+        d7 = float(s7.get("trend_pct", 0) or 0)
+        d30 = float(s30.get("trend_pct", 0) or 0)
+        d90 = float(s90.get("trend_pct", 0) or 0)
+        directions = [_metric_direction(d7), _metric_direction(d30), _metric_direction(d90)]
+        non_stable = [direction for direction in directions if direction != "stable"]
+
+        if len(non_stable) < 2:
+            continue
+        if len(set(non_stable)) != 1:
+            continue
+
+        direction = non_stable[0]
+        label = _metric_business_label(metric_key)
+        avg_abs = (abs(d7) + abs(d30) + abs(d90)) / 3
+        score = min(100, round(45 + avg_abs * 2.5 + (15 if directions.count(direction) == 3 else 0)))
+        signal_word = "steigt" if direction == "up" else "faellt"
+        title = f"{label} {signal_word} wiederholt"
+        patterns.append(
+            {
+                "id": f"pattern-{metric_key}-{direction}",
+                "category": "time",
+                "metric": metric_key,
+                "title": title,
+                "what_happens": f"{label} {signal_word} nicht nur einmal, sondern wiederholt ueber mehrere Zeitraeume.",
+                "when": "Sichtbar in 7, 30 und 90 Tagen." if directions.count(direction) == 3 else "Sichtbar in mindestens 2 von 3 Zeitraeumen.",
+                "evidence": f"7 Tage {d7:+.1f}%, 30 Tage {d30:+.1f}%, 90 Tage {d90:+.1f}%.",
+                "why_likely": (
+                    "Das wirkt nicht wie ein Zufall, sondern wie ein wiederkehrendes Verhaltensmuster im System."
+                    if directions.count(direction) == 3
+                    else "Die Entwicklung wiederholt sich in mehreren Fenstern und hat deshalb wahrscheinlich eine strukturelle Ursache."
+                ),
+                "score": score,
+                "strength": _pattern_strength(score),
+                "action": (
+                    f"Dieses Muster aktiv ausbauen und als Standard fuer {label} nutzen."
+                    if direction == "up"
+                    else f"Die wiederkehrende Ursache fuer {label} isolieren und sofort gegensteuern."
+                ),
+                "windows": {"7d": round(d7, 1), "30d": round(d30, 1), "90d": round(d90, 1)},
+                "repeated": True,
+                "business_impact": round(avg_abs, 1),
+            }
+        )
+
+    weekday_candidates = [snapshot_7.get("weekday_pattern", {}), snapshot_30.get("weekday_pattern", {}), snapshot_90.get("weekday_pattern", {})]
+    best_days = [item.get("best_day") for item in weekday_candidates if item.get("best_day")]
+    worst_days = [item.get("worst_day") for item in weekday_candidates if item.get("worst_day")]
+    spread_values = [float(item.get("spread_pct", 0) or 0) for item in weekday_candidates if item]
+    if best_days and worst_days and len(set(best_days)) == 1 and len(set(worst_days)) == 1 and max(spread_values or [0]) >= 10:
+        avg_spread = sum(spread_values) / len(spread_values)
+        score = min(100, round(55 + abs(avg_spread) * 1.5))
+        patterns.append(
+            {
+                "id": "pattern-weekday-revenue",
+                "category": "content_timing",
+                "metric": "revenue",
+                "title": "Wochentagsmuster ist stabil",
+                "what_happens": f"Der beste Tag ist wiederholt {best_days[0]}, der schwaechste Tag wiederholt {worst_days[0]}.",
+                "when": "Das zeigt sich in 7, 30 und 90 Tagen.",
+                "evidence": f"Spreizung zwischen starkem und schwachem Tag: im Schnitt {avg_spread:+.1f}%.",
+                "why_likely": "Die Leistung haengt wahrscheinlich mit Timing, Zielgruppenverhalten oder wiederkehrenden Aktionen pro Wochentag zusammen.",
+                "score": score,
+                "strength": _pattern_strength(score),
+                "action": f"Starke Tage fuer Push und schwache Tage fuer Tests, Retargeting oder Qualitaetsverbesserung nutzen.",
+                "windows": {
+                    "7d": round(spread_values[0], 1) if len(spread_values) > 0 else 0.0,
+                    "30d": round(spread_values[1], 1) if len(spread_values) > 1 else 0.0,
+                    "90d": round(spread_values[2], 1) if len(spread_values) > 2 else 0.0,
+                },
+                "repeated": True,
+                "business_impact": round(abs(avg_spread), 1),
+            }
+        )
+
+    return sorted(patterns, key=lambda item: (item.get("score", 0), item.get("business_impact", 0)), reverse=True)[:6]
+
+
+def _detect_deviations_from_snapshots(snapshot_7: dict, snapshot_30: dict, snapshot_90: dict) -> list[dict]:
+    deviations: list[dict] = []
+    comparable_metrics = ("revenue", "traffic", "conversion_rate", "new_customers", "revenue_per_visit")
+
+    for metric_key in comparable_metrics:
+        current_metric = _metric_series(snapshot_30, metric_key)
+        baseline_7 = _metric_series(snapshot_7, metric_key)
+        baseline_90 = _metric_series(snapshot_90, metric_key)
+        if not current_metric or not baseline_7 or not baseline_90:
+            continue
+
+        latest = float(current_metric.get("latest", 0) or 0)
+        avg_7 = float(baseline_7.get("avg", 0) or 0)
+        avg_30 = float(current_metric.get("avg", 0) or 0)
+        avg_90 = float(baseline_90.get("avg", 0) or 0)
+        if avg_7 <= 0 and avg_30 <= 0 and avg_90 <= 0:
+            continue
+
+        def _dev(cur: float, base: float) -> float:
+            return pct_change(cur, base) if base else 0.0
+
+        dev_7 = _dev(latest, avg_7)
+        dev_30 = _dev(latest, avg_30)
+        dev_90 = _dev(latest, avg_90)
+        max_dev = max(abs(dev_7), abs(dev_30), abs(dev_90))
+        if max_dev < 12:
+            continue
+
+        direction = "up" if max(dev_7, dev_30, dev_90) > abs(min(dev_7, dev_30, dev_90)) else "down"
+        label = _metric_business_label(metric_key)
+        impact_score = min(100, round(40 + max_dev * 2))
+        deviations.append(
+            {
+                "id": f"deviation-{metric_key}",
+                "metric": metric_key,
+                "title": f"{label} weicht klar ab",
+                "status": "ungewoehnlicher Anstieg" if direction == "up" else "KPI-Abfall",
+                "what_happened": (
+                    f"{label} liegt aktuell deutlich ueber der Erwartung."
+                    if direction == "up"
+                    else f"{label} liegt aktuell deutlich unter der Erwartung."
+                ),
+                "why_it_happened": "Die Veraenderung ist gross genug, um nicht nur normales Tagesrauschen zu sein.",
+                "what_it_means": (
+                    f"Das ist kurzfristig positiv, sollte aber auf Wiederholbarkeit geprueft werden."
+                    if direction == "up"
+                    else f"Das belastet direkt Leistung, Zielerreichung oder Umsatz."
+                ),
+                "what_to_do": (
+                    f"Pruefen, was den Anstieg bei {label} ausgeloest hat, und den Effekt wiederholbar machen."
+                    if direction == "up"
+                    else f"Die Ursache fuer den Rueckgang bei {label} heute priorisiert pruefen und Gegenmassnahme starten."
+                ),
+                "compare": {
+                    "today_vs_7d": round(dev_7, 1),
+                    "today_vs_30d": round(dev_30, 1),
+                    "today_vs_90d": round(dev_90, 1),
+                },
+                "value": round(latest, 2),
+                "baseline_7d": round(avg_7, 2),
+                "baseline_30d": round(avg_30, 2),
+                "baseline_90d": round(avg_90, 2),
+                "priority": _metric_priority_from_impact(impact_score),
+                "impact_score": impact_score,
+                "urgency": "hoch" if impact_score >= 65 else "mittel" if impact_score >= 40 else "niedrig",
+                "pattern_link": "wiederkehrend" if any(metric_key == p.get("metric") for p in snapshot_90.get("patterns", [])) else "eher einmalig",
+            }
+        )
+
+    return sorted(deviations, key=lambda item: item.get("impact_score", 0), reverse=True)[:6]
+
+
 def build_metric_snapshot(rows: list[DailyMetrics], goals: Optional[list[Goal]] = None) -> dict:
     if not rows:
         return {}
@@ -450,11 +662,27 @@ def build_metric_snapshot(rows: list[DailyMetrics], goals: Optional[list[Goal]] 
 
 
 def build_analysis_snapshot(db: Session, days: int = 30) -> dict:
-    rows = get_daily_rows(db, days)
+    rows = get_daily_rows(db, max(days, 90))
     if not rows:
         return {}
     goals = db.query(Goal).all()
-    return build_metric_snapshot(rows, goals)
+    snapshot_current = build_metric_snapshot(_window_rows(rows, days), goals)
+    snapshot_7 = build_metric_snapshot(_window_rows(rows, 7), goals)
+    snapshot_30 = build_metric_snapshot(_window_rows(rows, 30), goals)
+    snapshot_90 = build_metric_snapshot(rows, goals)
+    patterns = _detect_patterns_from_snapshots(snapshot_7, snapshot_30, snapshot_90)
+    snapshot_90["patterns"] = patterns
+    deviations = _detect_deviations_from_snapshots(snapshot_7, snapshot_30, snapshot_90)
+    return {
+        **snapshot_current,
+        "comparison_windows": {
+            "7d": snapshot_7,
+            "30d": snapshot_30,
+            "90d": snapshot_90,
+        },
+        "patterns": patterns,
+        "deviations": deviations,
+    }
 
 
 def build_analysis_context(data: dict) -> str:
@@ -521,6 +749,21 @@ def build_analysis_context(data: dict) -> str:
         for anomaly in data["anomalies"][:3]:
             lines.append(
                 f"  {anomaly['metric']} am {anomaly['date']}: {anomaly['value']} vs {anomaly['avg']} ({anomaly['deviation']:+.1f}%, z={anomaly['z_score']:+.2f})"
+            )
+
+    if data.get("patterns"):
+        lines.append("\nMUSTER:")
+        for pattern in data["patterns"][:4]:
+            lines.append(
+                f"  {pattern['title']}: {pattern['evidence']} Score {pattern['score']}/100. Aktion: {pattern['action']}"
+            )
+
+    if data.get("deviations"):
+        lines.append("\nABWEICHUNGEN:")
+        for deviation in data["deviations"][:4]:
+            compare = deviation.get("compare", {})
+            lines.append(
+                f"  {deviation['title']}: heute vs 7d {compare.get('today_vs_7d', 0):+.1f}%, vs 30d {compare.get('today_vs_30d', 0):+.1f}%, vs 90d {compare.get('today_vs_90d', 0):+.1f}%. Prioritaet: {deviation['priority']}"
             )
 
     return "\n".join(lines)

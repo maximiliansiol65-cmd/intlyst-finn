@@ -185,6 +185,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   min-height: 100dvh;
+  transition: background-color var(--dur-slow) ease, color var(--dur-slow) ease;
 }
 
 #root {
@@ -234,6 +235,31 @@ h1, h2, h3, h4, h5, h6 {
   flex: 1;
   min-height: 0;
   padding-top: var(--nav-height);
+}
+
+.app-shell > main.page-shell {
+  position: relative;
+  overflow-x: clip;
+  isolation: isolate;
+}
+
+.page-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at top center, rgba(0, 113, 227, 0.06), transparent 0 52%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 22%);
+  opacity: 0.85;
+  z-index: 0;
+}
+
+.page-stage {
+  position: relative;
+  z-index: 1;
+  min-height: calc(100dvh - var(--nav-height));
+  contain: layout paint;
 }
 
 /* ── 5. Scrollbars ────────────────────────────────────────────────────────── */
@@ -351,18 +377,38 @@ h1, h2, h3, h4, h5, h6 {
 
 /* ── 9. Page Transition ───────────────────────────────────────────────────── */
 .page-enter {
-  animation: pageSoftIn var(--dur-ultra) var(--ease-fluid) both;
-  will-change: opacity, transform;
+  animation:
+    pageSoftIn var(--dur-ultra) var(--ease-fluid) both,
+    pageGlowSweep 680ms var(--ease-out) both;
+  transform-origin: top center;
+  will-change: opacity, transform, filter;
 }
 
 @keyframes pageSoftIn {
   from {
     opacity: 0;
-    transform: translateY(14px) scale(0.994);
+    transform: translateY(18px) scale(0.992);
+    filter: saturate(0.97) blur(1px);
   }
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+    filter: saturate(1) blur(0);
+  }
+}
+
+@keyframes pageGlowSweep {
+  0% {
+    opacity: 0.92;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+  45% {
+    opacity: 1;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  }
+  100% {
+    opacity: 1;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0);
   }
 }
 

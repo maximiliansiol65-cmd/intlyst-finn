@@ -1,6 +1,6 @@
 from datetime import datetime, date
 
-from sqlalchemy import Column, Index, Integer, Float, Date, String, DateTime, Text
+from sqlalchemy import Column, Index, Integer, Float, Date, String, DateTime, Text, ForeignKey
 
 from models.base import Base
 
@@ -45,8 +45,8 @@ class GoalReview(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     workspace_id = Column(Integer, nullable=False, default=1, index=True)
-    goal_id = Column(Integer, nullable=False, index=True)
-    reviewer_user_id = Column(Integer, nullable=True)
+    goal_id = Column(Integer, ForeignKey("goals.id"), nullable=False, index=True)
+    reviewer_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     # status: on_track|at_risk|behind|achieved|paused
     status = Column(String, nullable=False, default="on_track")
     score = Column(Float, nullable=True)               # 0–100

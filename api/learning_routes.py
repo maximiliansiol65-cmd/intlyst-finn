@@ -5,16 +5,13 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from api.auth_routes import User, get_current_user
-from database import engine, get_db
-from models.base import Base
+from database import get_db
 from models.action_request import ActionRequest
 from models.recommendation_outcome import RecommendationOutcome
 from services.learning_service import summarize_learning, update_policy_for_outcome
 from services.self_learning_service import collect_metric_signals, rebuild_policies, run_learning_cycle, policy_lookup
 
 router = APIRouter(prefix="/api/learning", tags=["learning"])
-
-Base.metadata.create_all(bind=engine)
 
 
 class OutcomeUpdateBody(BaseModel):

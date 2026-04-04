@@ -7,6 +7,7 @@ from typing import Any, Optional
 from sqlalchemy.orm import Session
 
 from database import get_current_workspace_id
+from services.tenant_guard import TenantContextError
 from models.decision_problem import DecisionProblem
 from models.daily_metrics import DailyMetrics
 from services.external_signal_service import get_external_signals
@@ -347,10 +348,20 @@ def _probable_cause_for_main_problem(kpi_items: list[dict[str, Any]], target_met
     }
 
 
-def run_decision_system(db: Session, persist: bool = True) -> dict[str, Any]:
+def run_decision_system(db: Session, persist: bool = True, workspace_id: int | None = None) -> dict[str, Any]:
+    if workspace_id is None:
+        workspace_id = get_current_workspace_id()
+    if workspace_id is None:
+        raise TenantContextError(
+            "run_decision_system called without workspace context. "
+            "Pass workspace_id explicitly or set ContextVar before calling."
+        )
     rows = (
         db.query(DailyMetrics)
-        .filter(DailyMetrics.period == "daily")
+        .filter(
+            DailyMetrics.workspace_id == workspace_id,
+            DailyMetrics.period == "daily",
+        )
         .order_by(DailyMetrics.date.asc())
         .limit(120)
         .all()
@@ -375,7 +386,6 @@ def run_decision_system(db: Session, persist: bool = True) -> dict[str, Any]:
 
     if main_problem and persist:
         now = datetime.utcnow()
-        workspace_id = get_current_workspace_id() or 1
         latest = (
             db.query(DecisionProblem)
             .filter(
@@ -438,8 +448,11 @@ def run_decision_system(db: Session, persist: bool = True) -> dict[str, Any]:
     }
 
 
-def list_problem_history(db: Session, limit: int = 30) -> list[dict[str, Any]]:
-    workspace_id = get_current_workspace_id() or 1
+def list_problem_history(db: Session, limit: int = 30, workspace_id: int | None = None) -> list[dict[str, Any]]:
+    if workspace_id is None:
+        workspace_id = get_current_workspace_id()
+    if workspace_id is None:
+        raise TenantContextError("list_problem_history called without workspace context.")
     rows = (
         db.query(DecisionProblem)
         .filter(DecisionProblem.workspace_id == workspace_id)
@@ -774,11 +787,19 @@ def _build_event(metric: str, rows: list[DailyMetrics], current_row: DailyMetric
     )
 
 
-def get_decision_events(db: Session, lookback_days: int = 30) -> list[DecisionEvent]:
+def get_decision_events(db: Session, lookback_days: int = 30, workspace_id: int | None = None) -> list[DecisionEvent]:
+    if workspace_id is None:
+        workspace_id = get_current_workspace_id()
+    if workspace_id is None:
+        raise TenantContextError("get_decision_events called without workspace context.")
     since = date.today() - timedelta(days=lookback_days)
     rows = (
         db.query(DailyMetrics)
-        .filter(DailyMetrics.period == "daily", DailyMetrics.date >= since)
+        .filter(
+            DailyMetrics.workspace_id == workspace_id,
+            DailyMetrics.period == "daily",
+            DailyMetrics.date >= since,
+        )
         .order_by(DailyMetrics.date.asc())
         .all()
     )

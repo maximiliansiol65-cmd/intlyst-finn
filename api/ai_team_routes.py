@@ -14,6 +14,13 @@ from sqlalchemy.orm import Session
 
 from database import get_db, get_current_workspace_id
 from api.auth_routes import get_current_user, User
+from api.role_guards import (
+    require_strategist_or_above,
+    require_manager_or_above,
+    get_user_workspace_role,
+    MANAGER_ROLES,
+)
+from services.tenant_guard import require_workspace_context
 from models.ai_agent import AIAgent
 from models.ai_output import AIOutput
 from services.ai_team_service import (
@@ -113,9 +120,9 @@ class FeedbackIn(BaseModel):
 @router.get("/", response_model=List[AIAgentOut])
 def list_agents(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_strategist_or_above),
 ):
-    workspace_id = get_current_workspace_id() or 1
+    workspace_id = require_workspace_context()
     agents = get_or_init_agents(db, workspace_id)
     return [AIAgentOut.from_orm_clean(a) for a in agents]
 
@@ -126,11 +133,18 @@ def list_role_outputs(
     status: Optional[str] = Query(None, description="new|acknowledged|acted_upon|dismissed"),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_strategist_or_above),
 ):
     if role not in _VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role. Valid: {sorted(_VALID_ROLES)}")
-    workspace_id = get_current_workspace_id() or 1
+    workspace_id = require_workspace_context()
+    # Non-managers can only see outputs for their own role
+    user_role = get_user_workspace_role(current_user, workspace_id, db)
+    if user_role not in MANAGER_ROLES and role != user_role:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Zugriff auf {role}-Outputs nicht erlaubt. Deine Rolle: {user_role}",
+        )
     outputs = get_outputs_by_role(db, workspace_id, role, limit=limit, status=status)
     return [AIOutputOut.from_orm_clean(o) for o in outputs]
 
@@ -140,11 +154,11 @@ def trigger_role_output(
     role: str,
     body: GenerateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_manager_or_above),
 ):
     if role not in _VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role. Valid: {sorted(_VALID_ROLES)}")
-    workspace_id = get_current_workspace_id() or 1
+    workspace_id = require_workspace_context()
     actor_user_id_raw = getattr(current_user, "id", None)
     actor_user_id = actor_user_id_raw if isinstance(actor_user_id_raw, int) else None
 
@@ -185,9 +199,9 @@ def give_feedback(
     output_id: int,
     body: FeedbackIn,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_strategist_or_above),
 ):
-    workspace_id = get_current_workspace_id() or 1
+    workspace_id = require_workspace_context()
     actor_user_id_raw = getattr(current_user, "id", None)
     actor_user_id = actor_user_id_raw if isinstance(actor_user_id_raw, int) else None
     output = submit_output_feedback(

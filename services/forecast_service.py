@@ -64,6 +64,14 @@ def _normalize_priority(score: float) -> str:
     return "low"
 
 
+def _trend_direction(delta: float, threshold: float = 2.0) -> str:
+    if delta >= threshold:
+        return "steigend"
+    if delta <= -threshold:
+        return "fallend"
+    return "stabil"
+
+
 def _load_metric_rows(db: Session, days: int = 120) -> list[DailyMetrics]:
     since = date.today() - timedelta(days=days)
     return (
@@ -110,6 +118,171 @@ def _benchmark_note(kpi_name: str, snapshot: dict) -> str:
             f"bei Capture Rate {float(snapshot.get('customer_capture_rate', {}).get('avg', 0) or 0):.1f}%."
         )
     return "Interner Benchmark basiert auf Verlauf, Zielbild und Forecast-Abweichung."
+
+
+def _opportunity_priority(impact_score: float, confidence_score: float, risk_penalty: float = 0.0) -> str:
+    weighted = impact_score * 0.7 + confidence_score * 0.3 - risk_penalty
+    return _normalize_priority(weighted)
+
+
+def _opportunity_candidates(snapshot: dict) -> list[dict[str, Any]]:
+    revenue = snapshot.get("revenue", {})
+    traffic = snapshot.get("traffic", {})
+    conversion = snapshot.get("conversion_rate", {})
+    customers = snapshot.get("new_customers", {})
+    revenue_per_visit = snapshot.get("revenue_per_visit", {})
+    capture_rate = snapshot.get("customer_capture_rate", {})
+    weekday = snapshot.get("weekday_pattern", {})
+
+    revenue_trend = _to_float(revenue.get("trend_pct"))
+    traffic_trend = _to_float(traffic.get("trend_pct"))
+    conversion_trend = _to_float(conversion.get("trend_pct"))
+    customer_trend = _to_float(customers.get("trend_pct"))
+    rpv_trend = _to_float(revenue_per_visit.get("trend_pct"))
+    capture_trend = _to_float(capture_rate.get("trend_pct"))
+    revenue_momentum = _to_float(snapshot.get("revenue_momentum_7d"))
+    traffic_momentum = _to_float(snapshot.get("traffic_momentum_7d"))
+    conversion_momentum = _to_float(snapshot.get("conversion_momentum_7d"))
+    weekday_spread = _to_float(weekday.get("spread_pct"))
+
+    items: list[dict[str, Any]] = []
+
+    if revenue_momentum > 3 and revenue_trend >= 0:
+        impact_score = min(96.0, 70.0 + revenue_momentum * 2.2 + max(0.0, revenue_trend))
+        confidence_score = min(92.0, 66.0 + max(0.0, revenue_trend) * 1.1)
+        items.append(
+            {
+                "id": "revenue-momentum-opportunity",
+                "title": "Umsatzmomentum beschleunigt sich",
+                "observation": (
+                    f"Umsatz zeigt kurzfristig {revenue_momentum:+.1f}% Momentum bei stabilem 30-Tage-Trend von {revenue_trend:+.1f}%."
+                ),
+                "why_now": "Das Signal zeigt, dass Wachstum bereits entsteht und mit fokussierter Skalierung in planbaren Umsatz ueberfuehrt werden kann.",
+                "evidence": (
+                    f"7 Tage: {revenue_momentum:+.1f}% Momentum, 30 Tage: {revenue_trend:+.1f}% Trend, Umsatz pro Visit: {rpv_trend:+.1f}%."
+                ),
+                "impact_score": round(impact_score, 1),
+                "confidence_score": round(confidence_score, 1),
+                "recommended_action": "Die zwei umsatzstaerksten Hebel sofort skalieren und schwache Budgetpositionen in Gewinner umschichten.",
+                "owner_role": "ceo",
+                "metric": "Umsatz",
+                "priority": _opportunity_priority(impact_score, confidence_score),
+                "period_7d": f"7 Tage: Umsatzmomentum {revenue_momentum:+.1f}%.",
+                "period_30d": f"30 Tage: Umsatztrend {revenue_trend:+.1f}%.",
+                "period_long": f"Langfristig: Umsatz pro Visit {_trend_direction(rpv_trend)} bei {rpv_trend:+.1f}%.",
+                "strategic": "Wenn das Momentum diszipliniert skaliert wird, entsteht daraus kein Ausreisser, sondern ein neuer Wachstumslevel.",
+            }
+        )
+
+    if conversion_momentum > 0.08 or conversion_trend > 3:
+        impact_score = min(93.0, 62.0 + max(0.0, conversion_trend) * 2.5 + max(0.0, conversion_momentum) * 18)
+        confidence_score = min(90.0, 64.0 + max(0.0, conversion_trend) * 1.2)
+        items.append(
+            {
+                "id": "conversion-efficiency-opportunity",
+                "title": "Conversion wird effizienter",
+                "observation": (
+                    f"Conversion entwickelt sich {conversion_trend:+.1f}% ueber 30 Tage und {conversion_momentum:+.2f} Prozentpunkte in 7 Tagen."
+                ),
+                "why_now": "Mehr Abschlusskraft auf bestehendem Traffic verbessert Wachstum und Profitabilitaet ohne proportional mehr Marketingkosten.",
+                "evidence": (
+                    f"Conversion: {conversion.get('avg', 0):.2f}% im Schnitt, 7 Tage: {conversion_momentum:+.2f} Prozentpunkte, Umsatz pro Visit: {rpv_trend:+.1f}%."
+                ),
+                "impact_score": round(impact_score, 1),
+                "confidence_score": round(confidence_score, 1),
+                "recommended_action": "Die Funnel-Stufe mit der besten Abschlussverbesserung sofort ausrollen und auf aehnliche Journeys uebertragen.",
+                "owner_role": "coo",
+                "metric": "Conversion Rate",
+                "priority": _opportunity_priority(impact_score, confidence_score),
+                "period_7d": f"7 Tage: Conversion-Momentum {conversion_momentum:+.2f} Prozentpunkte.",
+                "period_30d": f"30 Tage: Conversion-Trend {conversion_trend:+.1f}%.",
+                "period_long": f"Langfristig: Umsatz pro Visit {_trend_direction(rpv_trend)} bei {rpv_trend:+.1f}%.",
+                "strategic": "Ein wiederholbares Conversion-Learning vergroessert die Ertragskraft des gesamten Demand-Systems.",
+            }
+        )
+
+    if traffic_momentum > 4 and revenue_trend >= -2:
+        impact_score = min(88.0, 58.0 + traffic_momentum * 1.8 + max(0.0, traffic_trend))
+        confidence_score = min(86.0, 60.0 + max(0.0, traffic_trend) + max(0.0, revenue_trend) * 0.5)
+        items.append(
+            {
+                "id": "traffic-quality-opportunity",
+                "title": "Traffic skaliert schneller als erwartet",
+                "observation": (
+                    f"Traffic zeigt {traffic_momentum:+.1f}% Momentum und entwickelt sich ueber 30 Tage um {traffic_trend:+.1f}%."
+                ),
+                "why_now": "Wenn die zusaetzliche Nachfrage in hochwertige Journeys gelenkt wird, kann daraus kurzfristig neues Wachstum entstehen, bevor der Markt es ausreizt.",
+                "evidence": (
+                    f"Traffic 7 Tage: {traffic_momentum:+.1f}%, 30 Tage: {traffic_trend:+.1f}%, Revenue Trend: {revenue_trend:+.1f}%."
+                ),
+                "impact_score": round(impact_score, 1),
+                "confidence_score": round(confidence_score, 1),
+                "recommended_action": "Schnell wachsende Traffic-Quellen nach Umsatz pro Visit und Conversion qualifizieren und die besten Quellen sofort hochfahren.",
+                "owner_role": "cmo",
+                "metric": "Traffic",
+                "priority": _opportunity_priority(impact_score, confidence_score, risk_penalty=4.0),
+                "period_7d": f"7 Tage: Traffic-Momentum {traffic_momentum:+.1f}%.",
+                "period_30d": f"30 Tage: Traffic-Trend {traffic_trend:+.1f}%.",
+                "period_long": f"Langfristig: Umsatztrend {_trend_direction(revenue_trend)} bei {revenue_trend:+.1f}%.",
+                "strategic": "Fruehe Qualitaetssteuerung verhindert, dass Wachstum nur Reichweite erzeugt statt echten Business-Impact.",
+            }
+        )
+
+    if capture_trend > 3 or customer_trend > 4:
+        impact_score = min(90.0, 60.0 + max(0.0, customer_trend) * 2.1 + max(0.0, capture_trend) * 1.7)
+        confidence_score = min(88.0, 61.0 + max(0.0, capture_trend) * 1.1)
+        items.append(
+            {
+                "id": "customer-quality-opportunity",
+                "title": "Kundenqualitaet zieht an",
+                "observation": (
+                    f"Neue Kunden entwickeln sich {customer_trend:+.1f}% bei Capture-Rate-Trend von {capture_trend:+.1f}%."
+                ),
+                "why_now": "Bessere Abschlussqualitaet bedeutet, dass bestehende Akquise mehr wertvolle Nachfrage erzeugt als der Durchschnitt.",
+                "evidence": (
+                    f"Neue Kunden: {customers.get('avg', 0):.1f} im Schnitt, Trend {customer_trend:+.1f}%, Capture Rate {capture_rate.get('avg', 0):.1f}%."
+                ),
+                "impact_score": round(impact_score, 1),
+                "confidence_score": round(confidence_score, 1),
+                "recommended_action": "Die Quellen und Angebote mit ueberdurchschnittlicher Kundenqualitaet priorisieren und schwache Volumenquellen aktiv ersetzen.",
+                "owner_role": "strategist",
+                "metric": "Neue Kunden",
+                "priority": _opportunity_priority(impact_score, confidence_score),
+                "period_7d": f"7 Tage: Neukunden-Signal {_trend_direction(customer_trend)}.",
+                "period_30d": f"30 Tage: Neue Kunden {customer_trend:+.1f}%, Capture Rate {capture_trend:+.1f}%.",
+                "period_long": f"Langfristig: Conversion {_trend_direction(conversion_trend)} bei {conversion_trend:+.1f}%.",
+                "strategic": "Wenn Qualitaet frueh priorisiert wird, waechst nicht nur der Funnel, sondern die Ertragsbasis des Unternehmens.",
+            }
+        )
+
+    if weekday_spread > 20 and revenue_trend >= 0:
+        impact_score = min(82.0, 50.0 + weekday_spread * 0.5 + max(0.0, revenue_momentum))
+        confidence_score = min(84.0, 58.0 + weekday_spread * 0.3)
+        items.append(
+            {
+                "id": "weekday-pattern-opportunity",
+                "title": "Wiederkehrendes Peak-Muster nutzbar",
+                "observation": (
+                    f"{weekday.get('best_day', 'Top-Tag')} liegt um {weekday_spread:+.1f}% vor {weekday.get('worst_day', 'schwachem Tag')}."
+                ),
+                "why_now": "Ein wiederkehrendes Muster ist leichter skalierbar als ein einmaliger Peak und eignet sich fuer planbare Kampagnen- und Angebotssteuerung.",
+                "evidence": (
+                    f"Best Day: EUR {weekday.get('best_day_avg_revenue', 0):.2f}, Worst Day: EUR {weekday.get('worst_day_avg_revenue', 0):.2f}, Spread {weekday_spread:+.1f}%."
+                ),
+                "impact_score": round(impact_score, 1),
+                "confidence_score": round(confidence_score, 1),
+                "recommended_action": "Content, Kampagnen und Vertriebsimpulse auf den starken Wochentag verdichten und den schwachen Tag mit Tests stabilisieren.",
+                "owner_role": "cmo",
+                "metric": "Wochentagsmuster",
+                "priority": _opportunity_priority(impact_score, confidence_score, risk_penalty=8.0),
+                "period_7d": f"7 Tage: Umsatzmomentum {revenue_momentum:+.1f}%.",
+                "period_30d": f"30 Tage: Umsatztrend {revenue_trend:+.1f}%.",
+                "period_long": f"Langfristig: Wiederkehrender Tages-Spread {weekday_spread:+.1f}%.",
+                "strategic": "Wer Muster systematisch nutzt, gewinnt wiederholbares Wachstum statt punktueller Ausschlaege.",
+            }
+        )
+
+    return sorted(items, key=lambda item: (item["impact_score"], item["confidence_score"]), reverse=True)
 
 
 def _hidden_problems(snapshot: dict) -> list[dict[str, Any]]:
@@ -280,6 +453,8 @@ def _diagnosis_bundle(kpi_name: str, historical_points: list[dict[str, Any]], fo
 
     cause = _primary_cause_for_kpi(kpi_name, snapshot)
     hidden = _hidden_problems(snapshot)
+    opportunities = _opportunity_candidates(snapshot)
+    top_opportunity = opportunities[0] if opportunities else None
     benchmark = _benchmark_note(kpi_name, snapshot)
     priority = _normalize_priority(abs(change_7d) * 2 + abs(change_30d) + max(0.0, -growth_pct) + max(0.0, 75 - confidence) * 0.3)
 
@@ -292,7 +467,13 @@ def _diagnosis_bundle(kpi_name: str, historical_points: list[dict[str, Any]], fo
         f"{kpi_label} steht unter Beobachtung: {cause['main']} "
         f"Haupttreiber ist die direkt wirksame Ursache, Nebeneffekte begleiten die Entwicklung, Folgen werden dokumentiert."
     )
+    if top_opportunity:
+        ceo_line = (
+            f"{ceo_line} Groesste Chance aktuell: {top_opportunity['title']}. "
+            f"Warum jetzt: {top_opportunity['why_now']}"
+        )
     actions = [cause["action_now"], cause["action_mid"], cause["action_long"]]
+    next_best_action = top_opportunity["recommended_action"] if top_opportunity else cause["action_now"]
 
     return {
         "kpi_label": kpi_label,
@@ -309,6 +490,9 @@ def _diagnosis_bundle(kpi_name: str, historical_points: list[dict[str, Any]], fo
         },
         "forecast_note": f"Forecast: {growth_pct:+.1f}% bei {confidence:.0f}% Konfidenz.",
         "actions": actions,
+        "opportunities": opportunities,
+        "top_opportunity": top_opportunity,
+        "next_best_action": next_best_action,
     }
 
 
@@ -463,6 +647,27 @@ def persist_forecast_diagnosis(
         )
         hidden_insight_ids.append(_id_int(insight.id))
 
+    opportunity_insight_ids: list[int] = []
+    for opportunity in diagnosis["opportunities"][:3]:
+        insight = create_insight(
+            db=db,
+            workspace_id=workspace_id,
+            title=opportunity["title"],
+            insight_type="opportunity",
+            what_happened=opportunity["observation"],
+            why_it_happened=opportunity["why_now"],
+            what_it_means=f"{opportunity['evidence']} {opportunity['strategic']}",
+            what_to_do=opportunity["recommended_action"],
+            expected_outcome=f"Impact Score {opportunity['impact_score']:.0f} bei Confidence {opportunity['confidence_score']:.0f}.",
+            affected_kpi_ids=affected_ids,
+            priority=opportunity["priority"],
+            confidence_score=float(opportunity["confidence_score"]),
+            impact_score=float(opportunity["impact_score"]),
+            target_role=opportunity["owner_role"],
+            generated_by_ai_role=opportunity["owner_role"],
+        )
+        opportunity_insight_ids.append(_id_int(insight.id))
+
     problem = DecisionProblem(
         workspace_id=workspace_id,
         metric_key=kpi_name,
@@ -492,8 +697,10 @@ def persist_forecast_diagnosis(
         {
             "root_cause_insight_id": _id_int(root_cause_insight.id),
             "hidden_problem_insight_ids": hidden_insight_ids,
+            "opportunity_insight_ids": opportunity_insight_ids,
             "decision_problem_id": _id_int(problem.id),
             "recommended_actions": diagnosis["actions"],
+            "top_opportunity": diagnosis["top_opportunity"],
         }
     ))
     db.commit()
@@ -512,6 +719,10 @@ def persist_forecast_diagnosis(
         "periods": diagnosis["periods"],
         "actions": diagnosis["actions"],
         "hidden_problems": diagnosis["hidden_problems"],
+        "opportunities": diagnosis["opportunities"],
+        "top_opportunity": diagnosis["top_opportunity"],
+        "opportunity_insight_ids": opportunity_insight_ids,
+        "next_best_action": diagnosis["next_best_action"],
     }
 
 

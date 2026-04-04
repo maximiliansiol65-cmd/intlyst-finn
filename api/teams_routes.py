@@ -6,14 +6,11 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api.auth_routes import User, get_current_user, get_current_workspace_id
-from database import engine, get_db
-from models.base import Base
+from database import get_db
 from models.team import Team
 from models.team_membership import TeamMembership
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])
-
-Base.metadata.create_all(bind=engine)
 
 
 class TeamCreate(BaseModel):

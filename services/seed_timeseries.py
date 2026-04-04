@@ -6,10 +6,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import date, timedelta
 import random
 
-from database import SessionLocal, engine
+from database import SessionLocal
 from models.daily_metrics import Base, DailyMetrics
-
-Base.metadata.create_all(bind=engine)
 
 
 def seed_timeseries() -> int:

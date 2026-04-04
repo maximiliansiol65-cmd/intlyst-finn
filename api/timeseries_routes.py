@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models.daily_metrics import DailyMetrics
-from api.auth_routes import User, get_current_user
+from api.auth_routes import User, get_current_user, get_current_workspace_id
+from api.role_guards import require_member_or_above
 
 router = APIRouter(prefix="/api/timeseries", tags=["timeseries"])
 
@@ -66,13 +67,18 @@ def get_timeseries(
         "revenue", "traffic", "conversions", "conversion_rate", "new_customers", "all"
     ] = Query("revenue"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
+    workspace_id: int = Depends(get_current_workspace_id),
 ):
     start_date = date.today() - timedelta(days=days)
 
     rows = (
         db.query(DailyMetrics)
-        .filter(DailyMetrics.period == period, DailyMetrics.date >= start_date)
+        .filter(
+            DailyMetrics.workspace_id == workspace_id,
+            DailyMetrics.period == period,
+            DailyMetrics.date >= start_date,
+        )
         .order_by(asc(DailyMetrics.date))
         .all()
     )
@@ -141,7 +147,8 @@ def compare_periods(
         "revenue", "traffic", "conversions", "conversion_rate", "new_customers"
     ] = Query("revenue"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
+    workspace_id: int = Depends(get_current_workspace_id),
 ):
     """Vergleicht aktuelle Periode mit der gleich langen vorherigen Periode."""
     today = date.today()
@@ -150,13 +157,18 @@ def compare_periods(
 
     current_rows = (
         db.query(DailyMetrics)
-        .filter(DailyMetrics.period == period, DailyMetrics.date >= current_start)
+        .filter(
+            DailyMetrics.workspace_id == workspace_id,
+            DailyMetrics.period == period,
+            DailyMetrics.date >= current_start,
+        )
         .order_by(asc(DailyMetrics.date))
         .all()
     )
     previous_rows = (
         db.query(DailyMetrics)
         .filter(
+            DailyMetrics.workspace_id == workspace_id,
             DailyMetrics.period == period,
             DailyMetrics.date >= previous_start,
             DailyMetrics.date < current_start,

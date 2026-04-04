@@ -3,7 +3,6 @@ Report-Service: Daten sammeln, SVG-Charts erzeugen, KI-Narrative anfragen,
 vollständigen HTML-Bericht zusammenbauen und in der Datenbank speichern.
 """
 import logging
-import os
 from datetime import date, datetime, timedelta
 from typing import Optional
 
@@ -21,10 +20,14 @@ from services.chart_service import (
     trend_color, weekday_heatmap,
 )
 
-logger = logging.getLogger(__name__)
+from services.claude_runtime import (
+    CLAUDE_API_URL,
+    build_claude_headers,
+    build_claude_payload,
+    get_claude_runtime_config,
+)
 
-CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
-CLAUDE_MODEL   = "claude-sonnet-4-20250514"
+logger = logging.getLogger(__name__)
 
 
 # ── Datenaggregation ─────────────────────────────────────────────────────────
@@ -171,7 +174,7 @@ def collect_goals(db: Session, workspace_id: int) -> list[dict]:
 
 async def build_ai_narrative(data: dict, period_type: str) -> str:
     """Claude API für Executive Summary aufrufen."""
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    api_key, claude_model = get_claude_runtime_config()
     if not is_configured_secret(api_key, prefixes=("sk-ant-",), min_length=20):
         return _fallback_narrative(data)
 
@@ -209,16 +212,12 @@ async def build_ai_narrative(data: dict, period_type: str) -> str:
         async with httpx.AsyncClient(timeout=25) as client:
             res = await client.post(
                 CLAUDE_API_URL,
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": CLAUDE_MODEL,
-                    "max_tokens": 350,
-                    "messages": [{"role": "user", "content": prompt}],
-                },
+                headers=build_claude_headers(api_key),
+                json=build_claude_payload(
+                    prompt,
+                    model=claude_model,
+                    max_tokens=350,
+                ),
             )
         if res.status_code == 200:
             return res.json()["content"][0]["text"].strip()
@@ -501,10 +500,7 @@ async def create_report(
     workspace_id: int = 1,
 ) -> Report:
     """Vollständigen Report generieren und in der DB speichern."""
-    from database import engine
     from models.report import Report as ReportModel
-    from models.base import Base
-    Base.metadata.create_all(bind=engine)
 
     kw = period_end.isocalendar()[1]
     titles = {

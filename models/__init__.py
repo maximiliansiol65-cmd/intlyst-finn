@@ -42,6 +42,8 @@ from models.activity_log_di import ActivityLog
 from models.goals import GoalReview
 from models.mfa_secret import MfaSecret
 from models.user_session import UserSession
+# Junction tables (Phase 2: proper relational model)
+from models.junction_tables import GoalKPI, InsightTask, InsightGoal, ForecastScenario, TaskGoal
 
 __all__ = [
     "Base", "DailyMetrics", "ActionLog", "Goal", "GoalReview", "Notification", "Task",
@@ -77,4 +79,10 @@ __all__ = [
     "ActivityLog",
     "MfaSecret",
     "UserSession",
+    # Junction tables
+    "GoalKPI",
+    "InsightTask",
+    "InsightGoal",
+    "ForecastScenario",
+    "TaskGoal",
 ]

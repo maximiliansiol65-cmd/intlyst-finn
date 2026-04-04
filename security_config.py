@@ -1,6 +1,13 @@
 import os
 
 
+def normalize_secret_value(value: str) -> str:
+    stripped = (value or "").strip().strip('"').strip("'")
+    if stripped.startswith("sk-ant-") and stripped.endswith("#"):
+        stripped = stripped[:-1].rstrip()
+    return stripped
+
+
 _INSECURE_EXACT_VALUES = {
     "dein-secret",
     "bizlytics-super-secret-key-change-in-production",
@@ -32,7 +39,7 @@ def is_production_environment() -> bool:
 
 
 def is_placeholder_secret(value: str) -> bool:
-    stripped = (value or "").strip()
+    stripped = normalize_secret_value(value)
     if not stripped:
         return True
 
@@ -45,7 +52,7 @@ def is_placeholder_secret(value: str) -> bool:
 
 
 def is_configured_secret(value: str, prefixes: tuple[str, ...] = (), min_length: int = 1) -> bool:
-    stripped = (value or "").strip()
+    stripped = normalize_secret_value(value)
     if len(stripped) < min_length or is_placeholder_secret(stripped):
         return False
     if prefixes and not any(stripped.startswith(prefix) for prefix in prefixes):

@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timedelta
 import secrets, string, os, logging
-from database import get_db, engine, Base
+from database import get_db, Base
 from api.auth_routes import get_current_user
 
 router = APIRouter(prefix="/api/referral", tags=["referral"])
@@ -81,8 +81,6 @@ class ReferralReward(Base):
     is_milestone= Column(Boolean, default=False)
     reason      = Column(String)
     applied_at  = Column(DateTime, default=datetime.utcnow)
-
-Base.metadata.create_all(bind=engine)
 
 # ── Hilfsfunktionen ───────────────────────────────────────
 def _gen_code() -> str:

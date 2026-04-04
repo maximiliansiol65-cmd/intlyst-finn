@@ -12,7 +12,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from api.auth_routes import User, get_current_user
+from api.auth_routes import User, get_current_user, get_current_workspace_id
+from api.role_guards import require_member_or_above
 from models.daily_metrics import DailyMetrics
 from security_config import is_configured_secret
 
@@ -142,10 +143,10 @@ SEASON_DATA = {
 }
 
 
-def get_your_metrics(db: Session) -> dict:
+def get_your_metrics(db: Session, workspace_id: int) -> dict:
     rows = (
         db.query(DailyMetrics)
-        .filter(DailyMetrics.period == "daily")
+        .filter(DailyMetrics.workspace_id == workspace_id, DailyMetrics.period == "daily")
         .order_by(DailyMetrics.date)
         .all()
     )
@@ -263,13 +264,14 @@ Erstelle 3-4 Trends und 3-4 Insights. Sei konkret und branchenspezifisch."""
 async def get_market_overview(
     industry: str = "ecommerce",
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
+    workspace_id: int = Depends(get_current_workspace_id),
 ):
     valid = list(INDUSTRY_BENCHMARKS.keys())
     if industry not in valid:
         raise HTTPException(status_code=400, detail=f"Branche muss eine von {valid} sein.")
 
-    your_metrics = get_your_metrics(db)
+    your_metrics = get_your_metrics(db, workspace_id)
     bench_data = INDUSTRY_BENCHMARKS[industry]
     season, season_label = SEASON_DATA.get(date.today().month, ("normal", "Normalsaison"))
 
@@ -326,7 +328,8 @@ async def get_market_overview(
 async def get_location_data(
     city: str = "Muenchen",
     industry: str = "ecommerce",
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
+    workspace_id: int = Depends(get_current_workspace_id),
 ):
     """Gibt simulierte Standortdaten zurueck - spaeter mit Google Maps API erweiterbar."""
     _ = industry

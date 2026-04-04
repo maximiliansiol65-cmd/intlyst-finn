@@ -6,19 +6,22 @@ from typing import Any, Optional, cast, List, Tuple
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from database import get_db, engine
+from database import get_db
+from models.custom_kpi import CustomKPI
+from models.goals import Goal
+from models.insight import Insight
+from models.scenario import Scenario
 from models.task import Task, TaskHistory
-from models.base import Base
 from api.auth_routes import User, get_current_user
+from api.role_guards import require_member_or_above
 from services.decision_service import get_decision_events, run_decision_system
+from services.relationship_service import get_task_goal_ids, sync_task_goal_links
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
-
-Base.metadata.create_all(bind=engine)
 
 VALID_STATUSES   = {"open", "in_progress", "done"}
 VALID_PRIORITIES = {"high", "medium", "low"}
@@ -54,6 +57,9 @@ class TaskCreate(BaseModel):
     time_estimate_minutes: Optional[int] = None
     kpis:              Optional[list[str]] = None
     impact:            Optional[str]  = None
+    goal_ids:          Optional[list[int]] = None
+    linked_insight_id: Optional[int] = None
+    linked_scenario_id: Optional[int] = None
 
 
 class TaskUpdate(BaseModel):
@@ -70,11 +76,14 @@ class TaskUpdate(BaseModel):
     time_estimate_minutes: Optional[int] = None
     kpis:           Optional[list[str]] = None
     impact:         Optional[str]  = None
+    goal_ids:       Optional[list[int]] = None
+    linked_insight_id: Optional[int] = None
+    linked_scenario_id: Optional[int] = None
 
 
 class MemberAvailability(BaseModel):
     email: str
-    skills: list[str] = []
+    skills: list[str] = Field(default_factory=list)
     availability_pct: float = 100.0
     current_load_hours: float = 0.0
 
@@ -105,9 +114,9 @@ class TaskResponse(BaseModel):
     created_by:        Optional[str]
     goal:              Optional[str]
     expected_result:   Optional[str]
-    steps:             list[str] = []
+    steps:             list[str] = Field(default_factory=list)
     time_estimate_minutes: Optional[int]
-    kpis:              list[str] = []
+    kpis:              list[str] = Field(default_factory=list)
     completed_at:      Optional[datetime]
     created_at:        datetime
     updated_at:        Optional[datetime]
@@ -116,6 +125,9 @@ class TaskResponse(BaseModel):
     category_group:    Optional[str] = None
     reason:            Optional[str] = None
     time_pressure:     Optional[float] = None
+    goal_id_list:      list[int] = Field(default_factory=list)
+    linked_insight_id: Optional[int] = None
+    linked_scenario_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -254,7 +266,16 @@ def task_to_response(task: Task, extras: Optional[dict[str, Any]] = None) -> Tas
         category_group=extras.get("category_group"),
         reason=extras.get("reason"),
         time_pressure=extras.get("time_pressure"),
+        goal_id_list=extras.get("goal_id_list", []),
+        linked_insight_id=_i(task.linked_insight_id),
+        linked_scenario_id=_i(task.linked_scenario_id),
     )
+
+
+def _task_response_with_links(task: Task, workspace_id: int, db: Session, extras: Optional[dict[str, Any]] = None) -> TaskResponse:
+    merged = dict(extras or {})
+    merged.setdefault("goal_id_list", get_task_goal_ids(db, workspace_id, int(task.id)))
+    return task_to_response(task, merged)
 
 
 # ── Workforce heuristics (keeps actions confirmable; does not persist) ──
@@ -385,7 +406,82 @@ def _priority_stage(score: float) -> str:
     return "OPTIONAL"
 
 
+def _current_workspace_id(current_user: User) -> int:
+    workspace_id = int(getattr(current_user, "active_workspace_id", 0) or 0)
+    if workspace_id <= 0:
+        raise HTTPException(status_code=403, detail="Kein aktiver Workspace-Kontext.")
+    return workspace_id
+
+
+def _task_query_for_user(db: Session, current_user: User):
+    return db.query(Task).filter(Task.workspace_id == _current_workspace_id(current_user))
+
+
+def _validate_goal_ids(db: Session, workspace_id: int, goal_ids: Optional[list[int]]) -> list[int]:
+    normalized = [int(goal_id) for goal_id in (goal_ids or []) if int(goal_id) > 0]
+    if not normalized:
+        return []
+    rows = (
+        db.query(Goal.id)
+        .filter(Goal.workspace_id == workspace_id, Goal.id.in_(normalized))
+        .all()
+    )
+    found = {int(row[0]) for row in rows}
+    missing = sorted(set(normalized) - found)
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Ziele nicht gefunden: {missing}")
+    return list(dict.fromkeys(normalized))
+
+
+def _validate_linked_insight_id(db: Session, workspace_id: int, insight_id: Optional[int]) -> Optional[int]:
+    if insight_id is None:
+        return None
+    insight = (
+        db.query(Insight.id)
+        .filter(Insight.workspace_id == workspace_id, Insight.id == int(insight_id))
+        .first()
+    )
+    if not insight:
+        raise HTTPException(status_code=404, detail="Verknüpfte Insight nicht gefunden.")
+    return int(insight_id)
+
+
+def _validate_linked_scenario_id(db: Session, workspace_id: int, scenario_id: Optional[int]) -> Optional[int]:
+    if scenario_id is None:
+        return None
+    scenario = (
+        db.query(Scenario.id)
+        .filter(Scenario.workspace_id == workspace_id, Scenario.id == int(scenario_id))
+        .first()
+    )
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Verknüpftes Szenario nicht gefunden.")
+    return int(scenario_id)
+
+
+def _validate_kpi_names(db: Session, workspace_id: int, kpis: Optional[list[str]]) -> list[str]:
+    if not kpis:
+        return []
+    normalized = [str(kpi).strip() for kpi in kpis if str(kpi).strip()]
+    custom_names = {
+        str(row[0]).strip().lower()
+        for row in db.query(CustomKPI.name)
+        .filter(CustomKPI.workspace_id == workspace_id, CustomKPI.is_active == True)  # noqa: E712
+        .all()
+    }
+    allowed = {
+        "revenue", "traffic", "conversions", "conversion_rate", "new_customers",
+        "cost", "profit", "gross_margin", "cashflow", "liquidity",
+        "engagement", "open_rate", "ctr",
+    } | custom_names
+    invalid = [name for name in normalized if name.lower() not in allowed]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Unbekannte KPI-Referenzen: {invalid}")
+    return normalized
+
+
 def log_change(
+    workspace_id: int,
     task_id: int,
     field: str,
     old_value: str,
@@ -395,6 +491,7 @@ def log_change(
 ):
     if old_value != new_value:
         db.add(TaskHistory(
+            workspace_id=workspace_id,
             task_id=task_id,
             changed_by=changed_by,
             field=field,
@@ -406,7 +503,8 @@ def log_change(
 # ── Endpunkte ────────────────────────────────────────────
 
 @router.post("", response_model=TaskResponse)
-def create_task(body: TaskCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_task(body: TaskCreate, db: Session = Depends(get_db), current_user: User = Depends(require_member_or_above)):
+    workspace_id = _current_workspace_id(current_user)
     if body.priority not in VALID_PRIORITIES:
         raise HTTPException(status_code=400, detail=f"Priority muss eine von {VALID_PRIORITIES} sein.")
     if body.impact and body.impact not in VALID_IMPACTS:
@@ -415,9 +513,12 @@ def create_task(body: TaskCreate, db: Session = Depends(get_db), current_user: U
     goal = body.goal
     expected = body.expected_result
     steps_list = body.steps or []
-    kpis = body.kpis or []
+    kpis = _validate_kpi_names(db, workspace_id, body.kpis or [])
     eta = body.time_estimate_minutes
     impact = body.impact or body.priority
+    goal_ids = _validate_goal_ids(db, workspace_id, body.goal_ids)
+    linked_insight_id = _validate_linked_insight_id(db, workspace_id, body.linked_insight_id)
+    linked_scenario_id = _validate_linked_scenario_id(db, workspace_id, body.linked_scenario_id)
 
     if not (goal and expected and steps_list):
         goal, expected, steps_list, eta_auto, kpis_auto, impact = _derive_structure(
@@ -432,6 +533,7 @@ def create_task(body: TaskCreate, db: Session = Depends(get_db), current_user: U
             kpis = kpis_auto
 
     task = Task(
+        workspace_id=workspace_id,
         title=body.title,
         description=body.description,
         priority=body.priority,
@@ -440,29 +542,32 @@ def create_task(body: TaskCreate, db: Session = Depends(get_db), current_user: U
         assigned_to_id=body.assigned_to_id,
         due_date=body.due_date,
         recommendation_id=body.recommendation_id,
-        created_by=body.created_by,
+        created_by=body.created_by or getattr(current_user, "email", None),
         status="open",
         goal=goal,
         expected_result=expected,
         steps_json=_to_json_list(steps_list),
         kpis_json=_to_json_list(kpis),
         time_estimate_minutes=eta,
+        linked_insight_id=linked_insight_id,
+        linked_scenario_id=linked_scenario_id,
     )
     db.add(task)
     db.commit()
     db.refresh(task)
+    sync_task_goal_links(db, workspace_id, task.id, goal_ids)
 
-    log_change(cast(Any, task.id), "status", "", "open", body.created_by or "system", db)
+    log_change(workspace_id, cast(Any, task.id), "status", "", "open", body.created_by or "system", db)
     db.commit()
 
-    return task_to_response(task)
+    return _task_response_with_links(task, workspace_id, db)
 
 
 @router.post("/auto", response_model=TaskResponse)
 def create_task_from_signal(
     signal: TaskSignalCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
 ):
     """Erzeugt eine strukturierte Aufgabe aus KPI-Veränderungen/Ursachen."""
     title = f"Gegenmaßnahme: {signal.metric} {signal.change_pct:+.1f}%"
@@ -479,6 +584,7 @@ def create_task_from_signal(
     )
 
     task = Task(
+        workspace_id=_current_workspace_id(current_user),
         title=title,
         description=description,
         priority=priority,
@@ -494,9 +600,9 @@ def create_task_from_signal(
     db.add(task)
     db.commit()
     db.refresh(task)
-    log_change(cast(Any, task.id), "status", "", "open", "system", db)
+    log_change(_current_workspace_id(current_user), cast(Any, task.id), "status", "", "open", "system", db)
     db.commit()
-    return task_to_response(task)
+    return _task_response_with_links(task, _current_workspace_id(current_user), db)
 
 
 @router.get("", response_model=list[TaskResponse])
@@ -505,23 +611,25 @@ def get_tasks(
     priority:    Optional[str] = Query(None, enum=["high", "medium", "low"]),
     assigned_to: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
 ):
-    query = db.query(Task)
+    workspace_id = _current_workspace_id(current_user)
+    query = _task_query_for_user(db, current_user)
     if status:      query = query.filter(Task.status == status)
     if priority:    query = query.filter(Task.priority == priority)
     if assigned_to: query = query.filter(Task.assigned_to == assigned_to)
     tasks = query.order_by(desc(Task.created_at)).all()
-    return [task_to_response(t) for t in tasks]
+    return [_task_response_with_links(t, workspace_id, db) for t in tasks]
 
 
 @router.get("/stats")
-def get_task_stats(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    total       = db.query(Task).count()
-    open_count  = db.query(Task).filter(Task.status == "open").count()
-    in_progress = db.query(Task).filter(Task.status == "in_progress").count()
-    done        = db.query(Task).filter(Task.status == "done").count()
-    high_prio   = db.query(Task).filter(Task.priority == "high", Task.status != "done").count()
+def get_task_stats(db: Session = Depends(get_db), current_user: User = Depends(require_member_or_above)):
+    tasks_query = _task_query_for_user(db, current_user)
+    total = tasks_query.count()
+    open_count = tasks_query.filter(Task.status == "open").count()
+    in_progress = tasks_query.filter(Task.status == "in_progress").count()
+    done = tasks_query.filter(Task.status == "done").count()
+    high_prio = tasks_query.filter(Task.priority == "high", Task.status != "done").count()
 
     return {
         "total":       total,
@@ -536,17 +644,31 @@ def get_task_stats(db: Session = Depends(get_db), current_user: User = Depends(g
 @router.get("/prioritized")
 def get_prioritized_tasks(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
 ):
-    events = get_decision_events(db)
-    decision = run_decision_system(db, persist=False)
+    workspace_id = _current_workspace_id(current_user)
+    try:
+        events = get_decision_events(db, workspace_id=workspace_id)
+        decision = run_decision_system(db, persist=False, workspace_id=workspace_id)
+    except Exception:
+        events = []
+        decision = {}
     main_problem = decision.get("main_problem") if isinstance(decision, dict) else None
 
-    tasks = db.query(Task).filter(Task.status != "done").all()
+    from services.priority_service import compute_task_priority_from_db, score_to_priority
+    tasks = _task_query_for_user(db, current_user).filter(Task.status != "done").all()
     enriched = []
     for task in tasks:
         category, category_label = _task_category(task)
-        score, reason, time_pressure = _impact_score(task, events, main_problem, category)
+        # Use DB-driven priority score if signals available; fall back to legacy scorer
+        try:
+            di_score, _di_priority, di_reason = compute_task_priority_from_db(db, workspace_id, task)
+            # Blend DI score (60%) with legacy event-based score (40%)
+            legacy_score, legacy_reason, time_pressure = _impact_score(task, events, main_problem, category)
+            score = round(di_score * 0.6 + legacy_score * 0.4, 1)
+            reason = di_reason if di_score > 30 else legacy_reason
+        except Exception:
+            score, reason, time_pressure = _impact_score(task, events, main_problem, category)
         stage = _priority_stage(score)
         extras = {
             "impact_score_calc": score,
@@ -556,7 +678,7 @@ def get_prioritized_tasks(
             "time_pressure": time_pressure,
         }
         setattr(task, "_extras", extras)
-        enriched.append(task_to_response(task, extras))
+        enriched.append(_task_response_with_links(task, workspace_id, db, extras))
 
     enriched.sort(key=lambda t: (-(t.impact_score_calc or 0), t.due_date or date.max))
     today = date.today()
@@ -589,11 +711,12 @@ def get_prioritized_tasks(
 
 
 @router.get("/{task_id}", response_model=TaskResponse)
-def get_task(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    task = db.query(Task).filter(Task.id == task_id).first()
+def get_task(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_member_or_above)):
+    workspace_id = _current_workspace_id(current_user)
+    task = _task_query_for_user(db, current_user).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task nicht gefunden.")
-    return task_to_response(task)
+    return _task_response_with_links(task, workspace_id, db)
 
 
 @router.patch("/{task_id}", response_model=TaskResponse)
@@ -602,9 +725,10 @@ def update_task(
     body: TaskUpdate,
     changed_by: str = Query("user"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
 ):
-    task = db.query(Task).filter(Task.id == task_id).first()
+    workspace_id = _current_workspace_id(current_user)
+    task = _task_query_for_user(db, current_user).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task nicht gefunden.")
 
@@ -616,13 +740,20 @@ def update_task(
         raise HTTPException(status_code=400, detail=f"Impact muss eine von {VALID_IMPACTS} sein.")
 
     changes = body.model_dump(exclude_unset=True)
+    goal_ids = None
+    if "goal_ids" in changes:
+        goal_ids = _validate_goal_ids(db, workspace_id, changes.pop("goal_ids"))
+    if "linked_insight_id" in changes:
+        changes["linked_insight_id"] = _validate_linked_insight_id(db, workspace_id, changes["linked_insight_id"])
+    if "linked_scenario_id" in changes:
+        changes["linked_scenario_id"] = _validate_linked_scenario_id(db, workspace_id, changes["linked_scenario_id"])
     if "steps" in changes:
         changes["steps_json"] = _to_json_list(changes.pop("steps"))
     if "kpis" in changes:
-        changes["kpis_json"] = _to_json_list(changes.pop("kpis"))
+        changes["kpis_json"] = _to_json_list(_validate_kpi_names(db, workspace_id, changes.pop("kpis")))
     for field, new_value in changes.items():
         old_value = getattr(task, field, None)
-        log_change(task_id, field, str(old_value), str(new_value), changed_by, db)
+        log_change(workspace_id, task_id, field, str(old_value), str(new_value), changed_by, db)
         setattr(task, field, new_value)
 
     if body.status == "done" and not cast(Any, task.completed_at):
@@ -632,22 +763,25 @@ def update_task(
 
     _set(task, "updated_at", datetime.utcnow())
     db.commit()
+    if goal_ids is not None:
+        sync_task_goal_links(db, workspace_id, task.id, goal_ids)
+        db.commit()
     db.refresh(task)
-    return task_to_response(task)
+    return _task_response_with_links(task, workspace_id, db)
 
 
 @router.post("/auto-assign")
 def suggest_auto_assignment(
     body: AutoAssignRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
 ):
     """
     Liefert Vorschläge für automatische Zuweisung auf Basis von Skills, Verfügbarkeit und Priorität.
     Persistiert NICHT – Nutzer muss bestätigen.
     """
     member_capacity: dict[str, int] = {m.email: 0 for m in body.members}
-    tasks_query = db.query(Task).filter(Task.status != "done")
+    tasks_query = _task_query_for_user(db, current_user).filter(Task.status != "done")
     if body.task_ids:
         tasks_query = tasks_query.filter(Task.id.in_(body.task_ids))
     tasks = tasks_query.all()
@@ -681,9 +815,9 @@ def suggest_auto_assignment(
 
 
 @router.post("/{task_id}/execute-preview")
-def execute_preview(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def execute_preview(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_member_or_above)):
     """1-Klick-Umsetzung: liefert vorbereitete Artefakte (ohne Versand)."""
-    task = db.query(Task).filter(Task.id == task_id).first()
+    task = _task_query_for_user(db, current_user).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task nicht gefunden.")
 
@@ -717,12 +851,12 @@ def execute_preview(task_id: int, db: Session = Depends(get_db), current_user: U
 def suggest_rebalance(
     body: RebalanceRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
 ):
     """
     Schlägt Umverteilung vor, wenn Deadlines gefährdet sind. Keine Änderungen ohne Nutzer-Bestätigung.
     """
-    tasks = db.query(Task).filter(Task.status != "done").all()
+    tasks = _task_query_for_user(db, current_user).filter(Task.status != "done").all()
     at_risk = [t for t in tasks if _deadline_risk(t.due_date, t.status) >= 0.5]
     suggestions = []
     for task in at_risk:
@@ -757,15 +891,16 @@ def suggest_rebalance(
 
 
 @router.get("/progress-stream")
-def progress_stream(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def progress_stream(db: Session = Depends(get_db), current_user: User = Depends(require_member_or_above)):
     """
     Leichtgewichtiger Snapshot für Echtzeit-Visualisierung (Polling/Streams).
     """
-    total = db.query(Task).count()
-    open_count = db.query(Task).filter(Task.status == "open").count()
-    in_progress = db.query(Task).filter(Task.status == "in_progress").count()
-    done = db.query(Task).filter(Task.status == "done").count()
-    due_soon = db.query(Task).filter(Task.status != "done", Task.due_date != None).count()
+    tasks_query = _task_query_for_user(db, current_user)
+    total = tasks_query.count()
+    open_count = tasks_query.filter(Task.status == "open").count()
+    in_progress = tasks_query.filter(Task.status == "in_progress").count()
+    done = tasks_query.filter(Task.status == "done").count()
+    due_soon = tasks_query.filter(Task.status != "done", Task.due_date != None).count()
     return {
         "timestamp": datetime.utcnow().isoformat(),
         "totals": {"all": total, "open": open_count, "in_progress": in_progress, "done": done},
@@ -779,16 +914,17 @@ def advance_status(
     task_id: int,
     changed_by: str = Query("user"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
 ):
-    task = db.query(Task).filter(Task.id == task_id).first()
+    workspace_id = _current_workspace_id(current_user)
+    task = _task_query_for_user(db, current_user).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task nicht gefunden.")
 
     old_status = cast(Any, task.status)
     new_status = STATUS_NEXT.get(old_status, "open")
 
-    log_change(task_id, "status", old_status, new_status, changed_by, db)
+    log_change(workspace_id, task_id, "status", old_status, new_status, changed_by, db)
     _set(task, "status", new_status)
 
     if new_status == "done":
@@ -799,18 +935,21 @@ def advance_status(
     _set(task, "updated_at", datetime.utcnow())
     db.commit()
     db.refresh(task)
-    return task_to_response(task)
+    return _task_response_with_links(task, workspace_id, db)
 
 
 @router.get("/{task_id}/history", response_model=list[HistoryEntry])
-def get_task_history(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    task = db.query(Task).filter(Task.id == task_id).first()
+def get_task_history(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_member_or_above)):
+    task = _task_query_for_user(db, current_user).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task nicht gefunden.")
 
     history = (
         db.query(TaskHistory)
-        .filter(TaskHistory.task_id == task_id)
+        .filter(
+            TaskHistory.workspace_id == _current_workspace_id(current_user),
+            TaskHistory.task_id == task_id,
+        )
         .order_by(desc(TaskHistory.changed_at))
         .all()
     )
@@ -818,12 +957,10 @@ def get_task_history(task_id: int, db: Session = Depends(get_db), current_user: 
 
 
 @router.delete("/{task_id}")
-def delete_task(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    task = db.query(Task).filter(Task.id == task_id).first()
+def delete_task(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_member_or_above)):
+    task = _task_query_for_user(db, current_user).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task nicht gefunden.")
     db.delete(task)
     db.commit()
-    return {"message": "Task gelöscht."}
-
     return {"message": "Task gelöscht."}

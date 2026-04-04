@@ -6,14 +6,11 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api.auth_routes import User, get_current_user, get_current_workspace_id
-from database import engine, get_db
-from models.base import Base
+from database import get_db
 from models.time_block import TimeBlock
 from models.plan import Plan
 
 router = APIRouter(prefix="/api/time-blocks", tags=["time-blocks"])
-
-Base.metadata.create_all(bind=engine)
 
 
 class TimeBlockCreate(BaseModel):

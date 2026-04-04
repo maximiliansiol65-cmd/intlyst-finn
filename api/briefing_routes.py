@@ -13,7 +13,6 @@ Endpunkte:
 
 import hashlib
 import json
-import os
 from datetime import date, datetime, timedelta
 from threading import Lock
 from time import perf_counter
@@ -30,11 +29,14 @@ from models.daily_metrics import DailyMetrics
 from models.goals import Goal
 from security_config import is_configured_secret
 from services.analysis_service import get_daily_rows
+from services.claude_runtime import (
+    CLAUDE_API_URL,
+    build_claude_headers,
+    build_claude_payload,
+    get_claude_runtime_config,
+)
 
 router = APIRouter(prefix="/api/briefing", tags=["briefing"])
-
-CLAUDE_URL   = "https://api.anthropic.com/v1/messages"
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-20250514")
 
 # Briefing-Cache: Pro Nutzer 1 Briefing pro Tag (6h TTL)
 _briefing_cache: dict[str, dict] = {}
@@ -513,7 +515,7 @@ async def get_briefing(
         )
 
     # ANTHROPIC_API_KEY prüfen
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    api_key, claude_model = get_claude_runtime_config()
     if not is_configured_secret(api_key, prefixes=("sk-ant-",), min_length=20):
         ms = round((perf_counter() - started) * 1000, 2)
         return _local_briefing_fallback(data, ms)
@@ -524,18 +526,14 @@ async def get_briefing(
     try:
         async with httpx.AsyncClient(timeout=35.0) as client:
             res = await client.post(
-                CLAUDE_URL,
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": CLAUDE_MODEL,
-                    "max_tokens": 900,
-                    "system": system_prompt,
-                    "messages": [{"role": "user", "content": user_prompt}],
-                },
+                CLAUDE_API_URL,
+                headers=build_claude_headers(api_key),
+                json=build_claude_payload(
+                    user_prompt,
+                    model=claude_model,
+                    max_tokens=900,
+                    system_prompt=system_prompt,
+                ),
             )
 
         if res.status_code != 200:

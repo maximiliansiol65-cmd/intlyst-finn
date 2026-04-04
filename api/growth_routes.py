@@ -12,6 +12,10 @@ from database import get_db
 from models.base import Base
 from api.auth_routes import User, get_current_user, get_current_workspace_id
 from models.daily_metrics import DailyMetrics
+from services.decision_prompting import (
+    DECISION_OPERATING_SYSTEM_PROMPT,
+    MARKETING_SALES_DECISION_APPENDIX,
+)
 
 router = APIRouter(prefix="/api/growth", tags=["growth"])
 
@@ -143,6 +147,12 @@ class GrowthAction(BaseModel):
     specific_steps: list[str]
     ice_score:      Optional[int] = None   # I × C × E (max 1000)
     funnel_stage:   Optional[str] = None   # awareness|engagement|conversion|retention
+    revenue_impact: Optional[int] = None
+    growth_impact:  Optional[int] = None
+    risk_impact:    Optional[int] = None
+    team_impact:    Optional[int] = None
+    business_impact_score: Optional[float] = None
+    impact_classification: Optional[str] = None
 
 
 class SocialStrategy(BaseModel):
@@ -167,6 +177,10 @@ class GrowthStrategyResponse(BaseModel):
     quick_wins:        list[str]
     warnings:          list[str]
     next_30_days:      list[str]
+    primary_recommendation: Optional[str] = None
+    primary_recommendation_reason: Optional[str] = None
+    primary_recommendation_effect: Optional[str] = None
+    next_step: Optional[str] = None
     generated_at:      str
 
 
@@ -334,6 +348,8 @@ WOCHENMUSTER:
         social_block = "\nSOCIAL MEDIA: " + ", ".join(f"{k}: @{v}" for k, v in socials.items() if v)
 
     return f"""Du bist Intlyst — ein hochentwickeltes KI-Wachstumssystem.
+{DECISION_OPERATING_SYSTEM_PROMPT}
+{MARKETING_SALES_DECISION_APPENDIX}
 
 UNTERNEHMEN: {company}
 BRANCHE: {industry}
@@ -499,6 +515,8 @@ async def get_growth_strategy(
     goal        = GROWTH_GOALS.get(goal_key, GROWTH_GOALS["more_revenue"])
 
     system = f"""Du bist Intlyst — das KI-Wachstumssystem fuer {phase_label} Unternehmen.
+{DECISION_OPERATING_SYSTEM_PROMPT}
+{MARKETING_SALES_DECISION_APPENDIX}
 Fokus: {goal['label']} — {goal['focus']}
 Methodik: ICE-Scoring (Impact × Confidence × Ease), Chain-of-Thought Begruendungen, Funnel-Stage-Zuordnung.
 Antworte ausschliesslich mit validem JSON. Keine Erklaerungen ausserhalb."""
@@ -526,6 +544,12 @@ Antworte NUR mit diesem JSON:
       "category": "marketing|product|sales|operations|content",
       "funnel_stage": "awareness|engagement|conversion|retention",
       "ice_score": 540,
+      "revenue_impact": 0,
+      "growth_impact": 0,
+      "risk_impact": 0,
+      "team_impact": 0,
+      "business_impact_score": 0,
+      "impact_classification": "geschaeftskritisch|sehr wichtig|sinnvoll|optional",
       "specific_steps": ["Schritt 1 konkret", "Schritt 2 konkret", "Schritt 3 konkret"]
     }}
   ],
@@ -554,19 +578,27 @@ Antworte NUR mit diesem JSON:
     "Woche 2: ...",
     "Woche 3: ...",
     "Woche 4: ..."
-  ]
+  ],
+  "primary_recommendation": "Die wichtigste Massnahme",
+  "primary_recommendation_reason": "Warum genau diese Massnahme die Nummer 1 ist",
+  "primary_recommendation_effect": "Welchen KPI-Effekt diese Massnahme erzeugen soll",
+  "next_step": "Was als Naechstes operativ umgesetzt wird"
 }}
 
 Regeln:
 - 4-5 actions, sortiert nach ice_score absteigend (ice_score = Impact × Confidence × Ease, je 1-10).
+- business_impact_score = (revenue_impact × 0.4) + (growth_impact × 0.3) + (risk_impact × 0.2) + (team_impact × 0.1).
 - funnel_stage fuer jede action setzen.
 - why_now: MUSS auf konkrete Zahl aus den gegebenen Daten verweisen.
+- Jede Action muss klar beantworten: Was wird gemacht? Warum jetzt? Welche KPI wird beeinflusst? Welche Wirkung wird erwartet? Wie schnell tritt Wirkung ein?
+- Marketing- und Sales-Empfehlungen muessen direkt aus Funnel-, Demand-, Reichweiten- oder Effizienzsignalen entstehen.
 - 3 social_strategies passend zu Branche und Ziel "{goal['label']}".
 - Phasen-Anpassung "{phase_label}":
   Early Stage: Fokus auf ersten Kunden, manuelles Wachstum, Product-Market-Fit.
   Growth Stage: Kanaloptimierung, Skalierung, Systematisierung.
   Scale Stage: Effizienz, LTV-Maximierung, neue Marktsegmente.
-- growth_score: 0-100 | growth_velocity: slow|medium|fast|explosive."""
+- growth_score: 0-100 | growth_velocity: slow|medium|fast|explosive.
+- primary_recommendation muss die hoechstpriorisierte Action benennen und begruenden."""
 
     raw         = await call_claude(system, prompt, max_tokens=2500)
     data_parsed = parse_json(raw)
@@ -583,6 +615,10 @@ Regeln:
         quick_wins=data_parsed.get("quick_wins", []),
         warnings=data_parsed.get("warnings", []),
         next_30_days=data_parsed.get("next_30_days", []),
+        primary_recommendation=data_parsed.get("primary_recommendation"),
+        primary_recommendation_reason=data_parsed.get("primary_recommendation_reason"),
+        primary_recommendation_effect=data_parsed.get("primary_recommendation_effect"),
+        next_step=data_parsed.get("next_step"),
         generated_at=datetime.utcnow().isoformat(),
     )
 

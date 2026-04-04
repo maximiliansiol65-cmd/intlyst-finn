@@ -14,6 +14,12 @@ from sqlalchemy.orm import Session
 
 from models.insight import Insight
 from models.activity_log_di import ActivityLog
+from services.relationship_service import (
+    get_insight_goal_ids,
+    get_insight_task_ids,
+    sync_insight_goal_links,
+    sync_insight_task_links,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +83,7 @@ def create_insight(
     )
     db.add(insight)
     db.flush()
+    sync_insight_goal_links(db, workspace_id, insight.id, linked_goal_ids or [])
 
     # Audit log
     _log_activity(
@@ -170,7 +177,13 @@ def submit_insight_feedback(
     insight = get_insight_by_id(db, workspace_id, insight_id)
     if not insight:
         return None
-    # Store feedback in structured_data field (reuse linked_task_ids slot or add json)
+    # Persist feedback on the insight record itself
+    insight.feedback_rating = rating
+    insight.feedback_comment = comment
+    insight.feedback_user_id = user_id
+    insight.feedback_at = datetime.utcnow()
+    if insight.status == "new":
+        insight.status = "acknowledged"
     insight.updated_at = datetime.utcnow()
     _log_activity(
         db, workspace_id=workspace_id, user_id=user_id,
@@ -191,9 +204,26 @@ def link_tasks_to_insight(
     insight = get_insight_by_id(db, workspace_id, insight_id)
     if not insight:
         return None
-    existing = json.loads(insight.linked_task_ids or "[]")
-    merged = list(set(existing + task_ids))
-    insight.linked_task_ids = json.dumps(merged)
+    existing = get_insight_task_ids(db, workspace_id, insight_id)
+    merged = list(dict.fromkeys(existing + [int(task_id) for task_id in task_ids]))
+    sync_insight_task_links(db, workspace_id, insight_id, merged)
+    insight.updated_at = datetime.utcnow()
+    db.commit()
+    return insight
+
+
+def link_goals_to_insight(
+    db: Session,
+    workspace_id: int,
+    insight_id: int,
+    goal_ids: list[int],
+) -> Insight | None:
+    insight = get_insight_by_id(db, workspace_id, insight_id)
+    if not insight:
+        return None
+    existing = get_insight_goal_ids(db, workspace_id, insight_id)
+    merged = list(dict.fromkeys(existing + [int(goal_id) for goal_id in goal_ids]))
+    sync_insight_goal_links(db, workspace_id, insight_id, merged)
     insight.updated_at = datetime.utcnow()
     db.commit()
     return insight

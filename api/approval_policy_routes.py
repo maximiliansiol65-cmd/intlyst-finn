@@ -3,13 +3,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api.auth_routes import User, get_current_user, get_current_workspace_id
-from database import engine, get_db
+from database import get_db
 from models.approval_policy_setting import ApprovalPolicySetting
-from models.base import Base
 
 router = APIRouter(prefix="/api/approval-policy", tags=["approval-policy"])
-
-Base.metadata.create_all(bind=engine)
 
 
 class ApprovalPolicyBody(BaseModel):

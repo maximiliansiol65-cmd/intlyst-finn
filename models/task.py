@@ -1,6 +1,5 @@
 from datetime import date, datetime
 
-from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
 
 from models.base import Base
@@ -22,7 +21,7 @@ class Task(Base):
     status            = Column(String, nullable=False, default="open")
     priority          = Column(String, nullable=False, default="medium")
     assigned_to       = Column(String, nullable=True)
-    assigned_to_id    = Column(Integer, nullable=True)
+    assigned_to_id    = Column(Integer, ForeignKey("users.id"), nullable=True)
     due_date          = Column(Date, nullable=True)
     recommendation_id = Column(Integer, nullable=True)
     completed_at      = Column(DateTime, nullable=True)
@@ -35,8 +34,8 @@ class Task(Base):
     trigger_reason    = Column(Text, nullable=True)     # Why was this task created?
     risk_score        = Column(Float, nullable=True, default=0.0)   # 0–100
     expected_impact   = Column(Text, nullable=True)     # Free-text expected outcome
-    linked_insight_id = Column(Integer, nullable=True)  # FK to insights
-    linked_scenario_id = Column(Integer, nullable=True) # FK to scenarios
+    linked_insight_id = Column(Integer, ForeignKey("insights.id"), nullable=True)
+    linked_scenario_id = Column(Integer, ForeignKey("scenarios.id"), nullable=True)
 
 
 class TaskHistory(Base):
@@ -44,7 +43,7 @@ class TaskHistory(Base):
 
     id         = Column(Integer, primary_key=True)
     workspace_id = Column(Integer, nullable=False, default=1, index=True)
-    task_id    = Column(Integer, nullable=False)
+    task_id    = Column(Integer, ForeignKey("tasks.id"), nullable=False)
     changed_by = Column(String, nullable=True)
     field      = Column(String, nullable=False)
     old_value  = Column(String, nullable=True)

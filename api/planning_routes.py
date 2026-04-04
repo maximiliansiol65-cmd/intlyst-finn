@@ -12,7 +12,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from api.auth_routes import User, get_current_user
+from api.auth_routes import User, get_current_user, get_current_workspace_id
+from api.role_guards import require_member_or_above
 from database import get_db
 from models.daily_metrics import DailyMetrics
 from models.task import Task
@@ -329,21 +330,21 @@ def _plan_chain(db: Session, workspace_id: int) -> PlanResponse:
 @router.get("/auto", response_model=PlanResponse)
 def auto_plan(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
+    workspace_id: int = Depends(get_current_workspace_id),
 ):
     """Erstellt automatisch eine verknüpfte Planung (Jahr → Monat → Woche → Tag)."""
-    ws_id = getattr(current_user, "active_workspace_id", None) or 1
-    return _plan_chain(db, ws_id)
+    return _plan_chain(db, workspace_id)
 
 
 @router.get("/ceo", response_model=PlanResponse)
 def ceo_view(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
+    workspace_id: int = Depends(get_current_workspace_id),
 ):
     """Reduzierte CEO-Sicht: nur Top-Prioritäten auf allen Ebenen (max 1 je Ebene)."""
-    ws_id = getattr(current_user, "active_workspace_id", None) or 1
-    plan = _plan_chain(db, ws_id)
+    plan = _plan_chain(db, workspace_id)
     return PlanResponse(
         yearly=plan.yearly[:1],
         monthly=plan.monthly[:1],

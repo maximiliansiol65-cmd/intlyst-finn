@@ -171,6 +171,7 @@ function AppShell() {
   const location = useLocation();
   const [chatOpen, setChatOpen] = useState(false);
   const [tourEnabled, setTourEnabled] = useState(false);
+  const routeKey = `${location.pathname}${location.search}`;
 
   useEffect(() => {
     const enableTours = localStorage.getItem("intlyst_enable_tours") === "1";
@@ -178,11 +179,35 @@ function AppShell() {
     setTourEnabled(enableTours || forced);
   }, [location.search]);
 
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.scrollTo !== "function") return;
+
+    const prefersReducedMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const run = () => {
+      try {
+        window.scrollTo({ top: 0, left: 0, behavior: prefersReducedMotion ? "auto" : "smooth" });
+      } catch {
+        window.scrollTo(0, 0);
+      }
+    };
+
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(run);
+    } else {
+      run();
+    }
+  }, [routeKey]);
+
   return (
     <div className="app-shell">
       <TopNav onAiClick={() => setChatOpen(true)} />
-      <main key={location.pathname} className="page-enter">
-        <PlanGate><Outlet /></PlanGate>
+      <main className="page-shell">
+        <div key={routeKey} className="page-stage page-enter">
+          <PlanGate><Outlet /></PlanGate>
+        </div>
       </main>
       <BottomTabBar />
       <ChatPanel isOpen={chatOpen} onClose={() => setChatOpen(false)} />

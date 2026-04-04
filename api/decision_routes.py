@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from api.auth_routes import User, get_current_user, get_current_workspace_id
+from services.tenant_guard import TenantContextError
 from database import get_db
 from models.task import Task
 from services.approval_policy_service import get_workspace_role
@@ -39,7 +40,7 @@ def get_decisions(
     current_user: User = Depends(get_current_user),
 ):
     del current_user
-    events = get_decision_events(db)
+    events = get_decision_events(db, workspace_id=get_current_workspace_id())
     from services.decision_service import build_decisions
     return {"decisions": build_decisions(events)}
 
@@ -50,7 +51,7 @@ def get_events(
     current_user: User = Depends(get_current_user),
 ):
     del current_user
-    events = get_decision_events(db)
+    events = get_decision_events(db, workspace_id=get_current_workspace_id())
     return {"events": [event.to_dict() for event in events], "count": len(events)}
 
 
@@ -64,7 +65,7 @@ def get_event_causes(
     event = get_event_by_id(db, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Decision Event nicht gefunden.")
-    events = get_decision_events(db)
+    events = get_decision_events(db, workspace_id=get_current_workspace_id())
     aggregated = _safe_aggregate_data(db, 30)
     marketing_mix = _build_marketing_mix(aggregated)
     crm_snapshot = _fetch_hubspot_summary() or {}
@@ -90,7 +91,7 @@ def get_cause_overview(
     current_user: User = Depends(get_current_user),
 ):
     del current_user
-    events = get_decision_events(db)
+    events = get_decision_events(db, workspace_id=get_current_workspace_id())
     aggregated = _safe_aggregate_data(db, 30)
     marketing_mix = _build_marketing_mix(aggregated)
     crm_snapshot = _fetch_hubspot_summary() or {}
@@ -116,7 +117,7 @@ def get_decision_recommendations(
     current_user: User = Depends(get_current_user),
 ):
     del current_user
-    events = get_decision_events(db)
+    events = get_decision_events(db, workspace_id=get_current_workspace_id())
     aggregated = _safe_aggregate_data(db, 30)
     marketing_mix = _build_marketing_mix(aggregated)
     crm_snapshot = _fetch_hubspot_summary() or {}
@@ -160,7 +161,7 @@ def get_main_problem(
     current_user: User = Depends(get_current_user),
 ):
     del current_user
-    return run_decision_system(db, persist=persist)
+    return run_decision_system(db, persist=persist, workspace_id=get_current_workspace_id())
 
 
 @router.get("/problem-history")
@@ -170,7 +171,7 @@ def get_problem_history(
     current_user: User = Depends(get_current_user),
 ):
     del current_user
-    return {"items": list_problem_history(db, limit=limit)}
+    return {"items": list_problem_history(db, limit=limit, workspace_id=get_current_workspace_id())}
 
 
 @router.get("/action-system")

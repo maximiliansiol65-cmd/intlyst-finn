@@ -1,6 +1,7 @@
 """
 KI-Engine v2.1 — Datenbasierte Analysen mit robuster Fallback-Logik.
 """
+import logging
 from datetime import date, datetime, timedelta
 import hashlib
 import json
@@ -19,6 +20,14 @@ from api.auth_routes import User, get_current_user
 from models.daily_metrics import DailyMetrics
 from security_config import is_configured_secret
 from models.audit_log import AuditLog
+from services.claude_runtime import (
+    CLAUDE_API_URL,
+    build_claude_headers,
+    build_claude_payload,
+    get_claude_runtime_config,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def _record_ai_audit(db: Session, user: "User", action: str, summary: str) -> None:
@@ -39,8 +48,9 @@ def _record_ai_audit(db: Session, user: "User", action: str, summary: str) -> No
         )
         db.add(row)
         db.commit()
-    except Exception:
-        pass  # Audit logging must never break the main flow
+    except Exception as exc:
+        db.rollback()
+        logger.warning("AI audit logging skipped: %s", exc)
 
 from services.analysis_service import (
     build_analysis_context,
@@ -53,6 +63,10 @@ from services.analysis_service import (
 )
 from services.enterprise_ai_service import build_enterprise_ai_response
 from services.forecast_service import persist_forecast_diagnosis
+from services.decision_prompting import (
+    DECISION_OPERATING_SYSTEM_PROMPT,
+    MARKETING_SALES_DECISION_APPENDIX,
+)
 
 # Analyse-Engine Schichten 1–4
 try:
@@ -79,9 +93,6 @@ except ImportError:
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
-CLAUDE_URL = "https://api.anthropic.com/v1/messages"
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-20250514")
-
 
 def _f(value: object) -> float:
     coerced = cast(Any, value)
@@ -94,6 +105,7 @@ MONITORED_ENDPOINTS = ("analysis", "recommendations", "chat", "forecast", "optim
 _monitor_lock = Lock()
 _cache_lock = Lock()
 CACHE_TTL_SECONDS = 60 * 5  # 5 Minuten — frische Analysen bei aktiven Sessions
+CACHE_MAX_ENTRIES = 2000  # prevent unbounded cache growth across workspaces
 
 
 def _new_metric() -> dict:
@@ -155,10 +167,18 @@ def _cache_get(key: str) -> Optional[dict]:
 
 def _cache_set(key: str, payload: BaseModel) -> None:
     with _cache_lock:
+        if len(AI_CACHE) >= CACHE_MAX_ENTRIES:
+            oldest_key = min(AI_CACHE, key=lambda k: AI_CACHE[k]["expires_at"])
+            AI_CACHE.pop(oldest_key, None)
         AI_CACHE[key] = {
             "expires_at": datetime.utcnow().timestamp() + CACHE_TTL_SECONDS,
             "payload": payload.model_dump(),
         }
+
+
+def _workspace_cache_key(workspace_id: Optional[int], key: str) -> str:
+    prefix = f"workspace:{workspace_id}" if workspace_id else "workspace:anon"
+    return f"{prefix}:{key}"
 
 
 # -- Schemas -----------------------------------------------------------------
@@ -195,12 +215,56 @@ class Insight(BaseModel):
     immediate_action: Optional[str] = None
     mid_term_action: Optional[str] = None
     long_term_action: Optional[str] = None
+    what_happened: Optional[str] = None
+    why_it_happened: Optional[str] = None
+    what_it_means: Optional[str] = None
+    what_to_do: Optional[str] = None
+    pattern_link: Optional[str] = None
+    pattern_score: Optional[int] = None
+    priority_reason: Optional[str] = None
     period_7d: Optional[str] = None
     period_30d: Optional[str] = None
     period_12m: Optional[str] = None
     confidence: int
     quality_score: Optional[int] = None
     quality_label: Optional[str] = None
+
+
+class PatternItem(BaseModel):
+    id: str
+    category: str
+    metric: str
+    title: str
+    what_happens: str
+    when: str
+    evidence: str
+    why_likely: str
+    score: int
+    strength: str
+    action: str
+    windows: dict[str, float] = {}
+    repeated: bool = False
+    business_impact: Optional[float] = None
+
+
+class DeviationItem(BaseModel):
+    id: str
+    metric: str
+    title: str
+    status: str
+    what_happened: str
+    why_it_happened: str
+    what_it_means: str
+    what_to_do: str
+    compare: dict[str, float] = {}
+    value: float
+    baseline_7d: float
+    baseline_30d: float
+    baseline_90d: float
+    priority: str
+    impact_score: int
+    urgency: str
+    pattern_link: Optional[str] = None
 
 
 class DashboardKPIItem(BaseModel):
@@ -227,6 +291,24 @@ class DashboardKPIItem(BaseModel):
     impact_pct: Optional[float] = None
 
 
+class OpportunityCard(BaseModel):
+    id: str
+    title: str
+    observation: str
+    why_now: str
+    evidence: str
+    impact_score: int
+    confidence_score: int
+    recommended_action: str
+    priority: Optional[str] = None
+    owner_role: Optional[str] = None
+    primary_metric: Optional[str] = None
+    period_7d: Optional[str] = None
+    period_30d: Optional[str] = None
+    period_12m: Optional[str] = None
+    strategic_context: Optional[str] = None
+
+
 class AnalysisResponse(BaseModel):
     generated_at: str
     data_period: str
@@ -241,6 +323,10 @@ class AnalysisResponse(BaseModel):
     processing_ms: float
     causal_chain: list[str] = []  # Ursachen-Kette (vom Top-Metrik bis Kernursache)
     dashboard_items: list[DashboardKPIItem] = []
+    patterns: list[PatternItem] = []
+    deviations: list[DeviationItem] = []
+    opportunities: list[OpportunityCard] = []
+    top_opportunity: Optional[OpportunityCard] = None
 
 
 class RecommendationItem(BaseModel):
@@ -264,6 +350,12 @@ class RecommendationItem(BaseModel):
     ice_confidence: Optional[int] = None  # 1-10: Evidenzstaerke
     ice_ease: Optional[int] = None        # 1-10: Umsetzbarkeit
     ice_score: Optional[int] = None       # I × C × E, max 1000
+    revenue_impact: Optional[int] = None
+    growth_impact: Optional[int] = None
+    risk_impact: Optional[int] = None
+    team_impact: Optional[int] = None
+    business_impact_score: Optional[float] = None
+    impact_classification: Optional[str] = None
     quality_score: Optional[int] = None
     quality_label: Optional[str] = None
 
@@ -292,6 +384,10 @@ class RecommendationsResponse(BaseModel):
     risks: list[str] = []
     scenarios: list[StrategicScenario] = []
     role_priorities: list[RolePriority] = []
+    primary_recommendation: Optional[str] = None
+    primary_recommendation_reason: Optional[str] = None
+    primary_recommendation_effect: Optional[str] = None
+    next_step: Optional[str] = None
     source: str
     processing_ms: float
 
@@ -384,6 +480,8 @@ class ForecastResponse(BaseModel):
     root_cause_insight_id: Optional[int] = None
     decision_problem_id: Optional[int] = None
     hidden_problems: list[dict] = []
+    opportunities: list[dict] = []
+    top_opportunity: Optional[dict] = None
     recommended_actions: list[str] = []
 
 
@@ -617,24 +715,20 @@ async def build_enriched_context(db: Session, source_data: dict, days: int = 90)
 # -- Claude ------------------------------------------------------------------
 
 async def call_claude(system_prompt: str, user_prompt: str, max_tokens: int = 2000) -> str:
-    key = os.getenv("ANTHROPIC_API_KEY", "")
+    key, claude_model = get_claude_runtime_config()
     if not is_configured_secret(key, prefixes=("sk-ant-",), min_length=20):
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY fehlt oder ungueltig.")
 
     async with httpx.AsyncClient(timeout=40) as client:
         res = await client.post(
-            CLAUDE_URL,
-            headers={
-                "x-api-key": key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": CLAUDE_MODEL,
-                "max_tokens": max_tokens,
-                "system": system_prompt,
-                "messages": [{"role": "user", "content": user_prompt}],
-            },
+            CLAUDE_API_URL,
+            headers=build_claude_headers(key),
+            json=build_claude_payload(
+                user_prompt,
+                model=claude_model,
+                max_tokens=max_tokens,
+                system_prompt=system_prompt,
+            ),
         )
 
     if res.status_code != 200:
@@ -819,6 +913,33 @@ def _build_dashboard_items(insights: list[Insight], source_data: dict) -> list[D
     return items
 
 
+def _build_opportunity_cards(insights: list[Insight]) -> list[OpportunityCard]:
+    cards: list[OpportunityCard] = []
+    for insight in insights:
+        if insight.type not in {"opportunity", "strength"}:
+            continue
+        cards.append(
+            OpportunityCard(
+                id=insight.id,
+                title=insight.title,
+                observation=insight.dashboard_summary or insight.description,
+                why_now=insight.strategic_context or insight.problem or insight.description,
+                evidence=insight.evidence,
+                impact_score=max(1, min(100, int(round(insight.impact_pct * 6.5)))),
+                confidence_score=max(1, min(100, int(insight.confidence))),
+                recommended_action=insight.immediate_action or insight.action,
+                priority=insight.priority,
+                owner_role=insight.owner_role,
+                primary_metric=insight.primary_metric or insight.kpi_link,
+                period_7d=insight.period_7d,
+                period_30d=insight.period_30d,
+                period_12m=insight.period_12m,
+                strategic_context=insight.strategic_context,
+            )
+        )
+    return sorted(cards, key=lambda card: (card.impact_score, card.confidence_score), reverse=True)[:5]
+
+
 def _normalize_insight(item: Insight) -> Insight:
     insight_type = "warning" if item.type == "risk" else item.type
     confidence = max(0, min(100, item.confidence))
@@ -877,6 +998,13 @@ def _normalize_insight(item: Insight) -> Insight:
         "immediate_action": item.immediate_action or item.action,
         "mid_term_action": item.mid_term_action or item.expected_result or item.action,
         "long_term_action": item.long_term_action or item.strategic_context or item.expected_result or item.action,
+        "what_happened": item.what_happened or item.problem or item.title,
+        "why_it_happened": item.why_it_happened or item.cause_primary or item.description,
+        "what_it_means": item.what_it_means or item.strategic_context or item.kpi_link,
+        "what_to_do": item.what_to_do or item.immediate_action or item.action,
+        "pattern_link": item.pattern_link or "",
+        "pattern_score": item.pattern_score,
+        "priority_reason": item.priority_reason or "",
     }
     return item.model_copy(update=update)
 
@@ -905,7 +1033,11 @@ def _validated_insights(items: list[Insight], source_data: dict) -> list[Insight
 def _validated_recommendations(items: list[RecommendationItem], source_data: dict) -> list[RecommendationItem]:
     seen_titles: set[str] = set()
     valid: list[RecommendationItem] = []
-    for item in sorted(items, key=lambda entry: entry.impact_pct, reverse=True):
+    for item in sorted(
+        items,
+        key=lambda entry: float(entry.business_impact_score or 0) if entry.business_impact_score is not None else entry.impact_pct,
+        reverse=True,
+    ):
         normalized_title = item.title.strip().lower()
         if normalized_title in seen_titles:
             continue
@@ -915,7 +1047,31 @@ def _validated_recommendations(items: list[RecommendationItem], source_data: dic
             continue
         if not contains_numeric_signal(item.rationale):
             continue
-        scored = RecommendationItem(**score_recommendation_quality(item.model_dump(), source_data))
+        item_data = item.model_dump()
+        revenue_impact = int(item_data.get("revenue_impact") or item_data.get("ice_impact") or 0)
+        growth_impact = int(item_data.get("growth_impact") or item_data.get("ice_confidence") or 0)
+        risk_impact = int(item_data.get("risk_impact") or 0)
+        team_impact = int(item_data.get("team_impact") or item_data.get("ice_ease") or 0)
+        business_impact_score = round((revenue_impact * 0.4) + (growth_impact * 0.3) + (risk_impact * 0.2) + (team_impact * 0.1), 1)
+        if business_impact_score > 80:
+            impact_classification = "geschaeftskritisch"
+        elif business_impact_score >= 60:
+            impact_classification = "sehr wichtig"
+        elif business_impact_score >= 40:
+            impact_classification = "sinnvoll"
+        else:
+            impact_classification = "optional"
+        item_data.update(
+            {
+                "revenue_impact": max(0, min(100, revenue_impact)),
+                "growth_impact": max(0, min(100, growth_impact)),
+                "risk_impact": max(0, min(100, risk_impact)),
+                "team_impact": max(0, min(100, team_impact)),
+                "business_impact_score": business_impact_score,
+                "impact_classification": impact_classification,
+            }
+        )
+        scored = RecommendationItem(**score_recommendation_quality(item_data, source_data))
         if (scored.quality_score or 0) < 60:
             continue
         seen_titles.add(normalized_title)
@@ -1071,6 +1227,13 @@ def _local_analysis_fallback(source_data: dict, processing_ms: float) -> Analysi
             "immediate_action": "Budget der letzten 7 Tage auf die zwei staerksten Umsatzquellen konzentrieren.",
             "mid_term_action": "Innerhalb von 14 Tagen die schwachen Kanaele reduzieren und Gewinner ausbauen.",
             "long_term_action": "Ein regelbasiertes Umsatz-Portfolio mit klaren Stop-/Scale-Regeln etablieren.",
+            "what_happened": f"Der Umsatz veraendert sich ueber den Zeitraum um {trend_pct:+.1f}%.",
+            "why_it_happened": "Wahrscheinlich werden starke Umsatzquellen noch nicht konsequent priorisiert und schwaechere Quellen laufen zu lange weiter.",
+            "what_it_means": "Das wirkt direkt auf Umsatz, Liquiditaet und Zielerreichung.",
+            "what_to_do": "Die besten Umsatzquellen sofort absichern und schwaechere Quellen aktiv reduzieren.",
+            "pattern_link": "Mit 7-, 30- und 90-Tage-Mustern gegenpruefen, ob der Trend wiederkehrt.",
+            "pattern_score": 72,
+            "priority_reason": "Hohe Prioritaet, weil Umsatz direkt den groessten Business-Effekt hat.",
             "period_7d": f"7 Tage: Umsatz-Momentum {float(source_data.get('revenue_momentum_7d', 0) or 0):+.1f}%.",
             "period_30d": f"30 Tage: Umsatztrend {trend_pct:+.1f}% versus Vorperiode.",
             "period_12m": "12 Monate: Historischer Vergleich ist im Fallback begrenzt, deshalb Trend monatlich weiter validieren.",
@@ -1108,6 +1271,13 @@ def _local_analysis_fallback(source_data: dict, processing_ms: float) -> Analysi
             "immediate_action": "Die zwei groessten Drop-off-Stellen im Funnel heute priorisieren.",
             "mid_term_action": "In 2 bis 4 Wochen Tests fuer Landingpage und Checkout sauber auswerten.",
             "long_term_action": "Ein wiederholbares Funnel-Optimierungsprogramm mit festen KPI-Schwellen aufsetzen.",
+            "what_happened": f"Die Conversion Rate liegt bei {conv.get('avg', 0):.2f}% und ihr Trend liegt bei {conv_trend_pct:+.1f}%.",
+            "why_it_happened": "Wahrscheinlich bremsen Reibung im Funnel und schwankende Traffic-Qualitaet die Abschluesse.",
+            "what_it_means": "Der vorhandene Traffic bringt weniger Umsatz als moeglich.",
+            "what_to_do": "Erst die groessten Reibungspunkte im Funnel beheben, bevor mehr Traffic eingekauft wird.",
+            "pattern_link": "Mit wiederkehrenden Funnel-Mustern der letzten 7, 30 und 90 Tage verknuepfen.",
+            "pattern_score": 68,
+            "priority_reason": "Wichtig, weil schon kleine Verbesserungen grosse Wirkung auf den bestehenden Traffic haben.",
             "period_7d": f"7 Tage: Conversion-Momentum {float(source_data.get('conversion_momentum_7d', 0) or 0):+.2f} Prozentpunkte.",
             "period_30d": f"30 Tage: Conversion-Trend {conv_trend_pct:+.1f}% gegen Vorperiode.",
             "period_12m": "12 Monate: Funnel-Muster sollten saisonal geprueft und gegen groeßere Traffic-Schwankungen abgesichert werden.",
@@ -1116,11 +1286,13 @@ def _local_analysis_fallback(source_data: dict, processing_ms: float) -> Analysi
     ]
     insights = [Insight(**score_insight_quality(item, source_data)) for item in fallback_insights]
 
+    opportunities = _build_opportunity_cards(insights)
+
     return AnalysisResponse(
         generated_at=datetime.utcnow().isoformat(),
         data_period=source_data.get("period", ""),
         summary="Lokale Fallback-Analyse aktiv: Kernsignale aus Umsatz, Conversion und Wochenvergleich wurden datenbasiert ausgewertet.",
-        ceo_summary="CEO-Fokus: Umsatztrend absichern, Conversion-Hebel im Kernfunnel priorisieren und KPI-Abweichungen frueher eskalieren.",
+        ceo_summary="CEO-Fokus: Umsatztrend absichern, Conversion-Hebel im Kernfunnel priorisieren und die groesste Wachstumschance aktiv skalieren.",
         health_score=health,
         health_label=health_label,
         insights=insights,
@@ -1129,6 +1301,10 @@ def _local_analysis_fallback(source_data: dict, processing_ms: float) -> Analysi
         source="fallback",
         processing_ms=processing_ms,
         dashboard_items=_build_dashboard_items(insights, source_data),
+        patterns=[PatternItem(**item) for item in source_data.get("patterns", []) if item.get("id")],
+        deviations=[DeviationItem(**item) for item in source_data.get("deviations", []) if item.get("id")],
+        opportunities=opportunities,
+        top_opportunity=opportunities[0] if opportunities else None,
     )
 
 
@@ -1159,6 +1335,10 @@ def _local_recommendations_fallback(processing_ms: float, source_data: dict) -> 
             "priority_reason": "Hohe Prioritaet, weil die Massnahme direkt auf Umsatz und Budgeteffizienz einzahlt.",
             "strategic_context": "Sichert kurzfristig Ertrag und schafft die Basis fuer gezieltere Wachstumsinvestitionen.",
             "risk_level": "medium",
+            "revenue_impact": 88,
+            "growth_impact": 72,
+            "risk_impact": 55,
+            "team_impact": 46,
         },
         {
             "id": "optimize-funnel",
@@ -1177,6 +1357,10 @@ def _local_recommendations_fallback(processing_ms: float, source_data: dict) -> 
             "priority_reason": "Mittlere Prioritaet, weil der Hebel gross ist, aber Produkt- und Umsetzungszeit benoetigt.",
             "strategic_context": "Ein struktureller Hebel, der denselben Traffic profitabler macht und Skalierung erleichtert.",
             "risk_level": "medium",
+            "revenue_impact": 74,
+            "growth_impact": 82,
+            "risk_impact": 48,
+            "team_impact": 42,
         },
         {
             "id": "kpi-guardrails",
@@ -1195,9 +1379,15 @@ def _local_recommendations_fallback(processing_ms: float, source_data: dict) -> 
             "priority_reason": "Sofort relevant, weil KPI-Brueche frueher erkannt und schneller gegengesteuert werden koennen.",
             "strategic_context": "Staerkt das Management-System und reduziert operative Blindspots bei weiterem Wachstum.",
             "risk_level": "low",
+            "revenue_impact": 42,
+            "growth_impact": 34,
+            "risk_impact": 78,
+            "team_impact": 58,
         },
     ]
     recs = [RecommendationItem(**score_recommendation_quality(item, source_data)) for item in fallback_recommendations]
+    recs = _validated_recommendations(recs, source_data)
+    primary = recs[0] if recs else None
     return RecommendationsResponse(
         generated_at=datetime.utcnow().isoformat(),
         recommendations=recs,
@@ -1268,6 +1458,10 @@ def _local_recommendations_fallback(processing_ms: float, source_data: dict) -> 
                 long_term=["Fruehwarnsystem fuer Rendite- und Margenrisiken institutionalisieren."],
             ),
         ],
+        primary_recommendation=primary.title if primary else None,
+        primary_recommendation_reason=primary.priority_reason if primary else None,
+        primary_recommendation_effect=primary.expected_result if primary else None,
+        next_step=primary.action_label if primary else None,
         source="fallback",
         processing_ms=processing_ms,
     )
@@ -1375,6 +1569,8 @@ def _with_persisted_forecast_context(
         response.root_cause_insight_id = diagnosis["root_cause_insight_id"]
         response.decision_problem_id = diagnosis["decision_problem_id"]
         response.hidden_problems = diagnosis["hidden_problems"]
+        response.opportunities = diagnosis.get("opportunities", [])
+        response.top_opportunity = diagnosis.get("top_opportunity")
         response.recommended_actions = diagnosis["actions"]
     except Exception:
         pass
@@ -1434,6 +1630,7 @@ def _local_optimizer_fallback(processing_ms: float) -> OptimizerResponse:
 async def get_analysis(days: int = 30, force_fallback: bool = Query(default=False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     started = perf_counter()
     source_data = load_real_data(db, days)
+    workspace_id = get_current_workspace_id()
 
     # Extrahiere Ursachen-Kette explizit
     causal_chain = []
@@ -1470,9 +1667,14 @@ async def get_analysis(days: int = 30, force_fallback: bool = Query(default=Fals
             processing_ms=ms,
             causal_chain=[],
             dashboard_items=[],
+            patterns=[],
+            deviations=[],
         )
 
-    cache_key = f"analysis:{days}:{_payload_fingerprint(source_data)}"
+    cache_key = _workspace_cache_key(
+        workspace_id,
+        f"analysis:{days}:{_payload_fingerprint(source_data)}",
+    )
     if not force_fallback:
         cached = _cache_get(cache_key)
         if cached:
@@ -1484,7 +1686,8 @@ async def get_analysis(days: int = 30, force_fallback: bool = Query(default=Fals
 
     # Schichten 1–3: Angereicherter Kontext (statistisch + Zeitreihe + Externe Daten)
     context = await build_enriched_context(db, source_data, days)
-    system = """Du bist ein McKinsey Senior Partner mit 20 Jahren Erfahrung in datengetriebener Unternehmensanalyse.
+    system = f"""Du bist ein McKinsey Senior Partner mit 20 Jahren Erfahrung in datengetriebener Unternehmensanalyse.
+{DECISION_OPERATING_SYSTEM_PROMPT}
 Deine Methodik: MECE-Strukturierung + Chain-of-Thought Reasoning (Signal → Ursache → Implikation → Massnahme).
 Du identifizierst nicht nur was passiert, sondern WARUM — und welche EINE Massnahme den groessten Unterschied macht.
 Du kalibrierst Konfidenz strikt: confidence >75 nur fuer Signale mit mindestens 2 konsistenten Datenpunkten.
@@ -1536,6 +1739,13 @@ Antworte AUSSCHLIESSLICH als JSON in diesem Schema:
       "immediate_action": "Konkrete Sofortmassnahme",
       "mid_term_action": "Konkrete Massnahme fuer 2-6 Wochen",
       "long_term_action": "Strategische Massnahme fuer die naechsten Monate",
+      "what_happened": "Einfache Antwort: Was passiert gerade?",
+      "why_it_happened": "Einfache Antwort: Warum passiert das wahrscheinlich?",
+      "what_it_means": "Einfache Antwort: Was bedeutet das fuer das Business?",
+      "what_to_do": "Einfache Antwort: Was solltest du jetzt tun?",
+      "pattern_link": "Ist das einmalig oder wiederkehrend? Was hat frueher geholfen?",
+      "pattern_score": 0,
+      "priority_reason": "Warum dieses Thema jetzt wichtig ist",
       "period_7d": "Einordnung fuer 7 Tage",
       "period_30d": "Einordnung fuer 30 Tage",
       "period_12m": "Einordnung fuer 12 Monate",
@@ -1546,16 +1756,25 @@ Antworte AUSSCHLIESSLICH als JSON in diesem Schema:
 }}
 
 Regeln:
+- Verwende sehr einfache Sprache. Kein Fachjargon.
+- Jedes Insight muss die vier Pflichtfragen direkt beantworten: Was passiert? Warum passiert das? Was bedeutet das? Was tun wir jetzt?
+- Verbinde jede Abweichung mit Mustern: einmalig oder wiederkehrend, gab es das schon, was hat damals funktioniert?
 - Chain-of-Thought pflicht: jedes Insight erklaert Signal → Ursache → Implikation → Massnahme.
 - Nutze nur gegebene Daten, keine freien Annahmen.
 - Erzeuge 4-6 Insights: mindestens 1x strength, 1x weakness, 1x opportunity.
+- Suche aktiv nach versteckten Chancen: ueberdurchschnittliches Wachstum, bessere Effizienz, wiederkehrende positive Muster, ueberproportionale Wirkung bei geringem Einsatz.
+- Jede Analyse muss 7 Tage, 30 Tage und den langfristigen Verlauf einordnen. Kein Einzelwert ohne Trendvergleich.
+- Vergleiche immer: aktuell vs Vergangenheit, kurzfristig vs langfristig, Erwartung vs Realitaet und wo moeglich starker Bereich vs schwacher Bereich.
+- Uebersetze Trends in Entscheidungen: Was ist die groesste Chance aktuell, warum genau diese, was soll als Naechstes passieren?
 - Einen "contrarian" Insight hinzufuegen: Was widerspricht den ersten Erwartungen oder laeuft gegen den Haupttrend?
 - Bevorzuge abgeleitete Kennzahlen: Umsatz/Visit, AOV, Neukunden/Conversion, 7-Tage-Momentum, Wochentagsmuster.
 - Jedes Insight: evidence mit Zahl, confidence 0-100, impact_pct > 0.
 - Jedes Insight braucht KPI-Bezug und strategische Einordnung in klarem CEO-Deutsch.
 - Jedes Insight muss klar Problem → Ursache → Massnahme abbilden und eine priorisierte Einstufung enthalten.
+- Die Analyse darf niemals nur beschreiben, sondern muss immer in konkrete, priorisierte Massnahmen uebergehen.
 - Ursachen als Hauptursache, Nebenursachen, Verstaerker ausgeben.
 - Jede Ursache mit Score 0-100 bewerten (Hoehe = staerkerer Einfluss).
+- Opportunity-Insights muessen explizit beantworten: Was passiert? Warum ist das eine Chance? Welche Daten belegen das? Wie stark ist die Chance? Wie sicher ist die Einschaetzung? Was tun wir jetzt?
 - confidence >75 = starkes Signal (mehrere Datenpunkte konsistent); 50-75 = mittel; <50 = schwach.
 - Sortiere Insights nach impact_pct absteigend."""
 
@@ -1582,6 +1801,7 @@ Regeln:
             return resp
 
         ms = _record_metric("analysis", started, "claude", True)
+        opportunities = _build_opportunity_cards(insights)
         response = AnalysisResponse(
             generated_at=datetime.utcnow().isoformat(),
             data_period=source_data.get("period", ""),
@@ -1596,6 +1816,10 @@ Regeln:
             processing_ms=ms,
             causal_chain=causal_chain,
             dashboard_items=_build_dashboard_items(insights, source_data),
+            patterns=[PatternItem(**item) for item in source_data.get("patterns", []) if item.get("id")],
+            deviations=[DeviationItem(**item) for item in source_data.get("deviations", []) if item.get("id")],
+            opportunities=opportunities,
+            top_opportunity=opportunities[0] if opportunities else None,
         )
         _cache_set(cache_key, response)
         return response
@@ -1615,6 +1839,7 @@ async def get_insights(days: int = 30, force_fallback: bool = Query(default=Fals
 async def get_recommendations(days: int = 30, force_fallback: bool = Query(default=False), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     started = perf_counter()
     source_data = load_real_data(db, days)
+    workspace_id = get_current_workspace_id()
 
     if not source_data:
         ms = _record_metric("recommendations", started, "local", True)
@@ -1632,7 +1857,10 @@ async def get_recommendations(days: int = 30, force_fallback: bool = Query(defau
             processing_ms=ms,
         )
 
-    cache_key = f"recommendations:{days}:{_payload_fingerprint(source_data)}"
+    cache_key = _workspace_cache_key(
+        workspace_id,
+        f"recommendations:{days}:{_payload_fingerprint(source_data)}",
+    )
     if not force_fallback:
         cached = _cache_get(cache_key)
         if cached:
@@ -1641,17 +1869,11 @@ async def get_recommendations(days: int = 30, force_fallback: bool = Query(defau
 
     # Schichten 1–3: Angereicherter Kontext
     context = await build_enriched_context(db, source_data, days)
-    system = """Du bist die AI-Strategist-Rolle innerhalb einer CEO- und Management-App.
-Du arbeitest wie ein echter Strategieberater fuer CEO, COO, CMO und CFO.
+    system = f"""Du bist die AI-Strategist-Rolle innerhalb einer CEO- und Management-App.
+{DECISION_OPERATING_SYSTEM_PROMPT}
+{MARKETING_SALES_DECISION_APPENDIX}
 
-DEINE AUFGABEN:
-1. Chancenanalyse: identifiziere Markt-, Wachstums- und Effizienzchancen.
-2. Risikomanagement: erkenne Umsatz-, Markt- und Umsetzungsrisiken fruehzeitig.
-3. Strategische Szenarien: simuliere realistische Handlungsoptionen und ihre KPI-Folgen.
-4. Priorisierung: leite klare Prioritaeten fuer CEO, COO, CMO und CFO ab.
-5. Strategische Kommunikation: formuliere klar, praxisnah, entscheidungsreif.
-
-METHODIK:
+ZUSATZREGELN:
 - Priorisiere Massnahmen nach ICE-Framework: Impact × Confidence × Ease (je 1-10, Gesamtscore max 1000).
 - Begruende jede Empfehlung quantitativ mit Zahlen aus den Daten.
 - Verknuepfe jede Empfehlung mit KPIs, operativen Zielen und einer verantwortlichen Management-Rolle.
@@ -1685,7 +1907,13 @@ Antwort nur als JSON:
       "ice_impact": 0,
       "ice_confidence": 0,
       "ice_ease": 0,
-      "ice_score": 0
+      "ice_score": 0,
+      "revenue_impact": 0,
+      "growth_impact": 0,
+      "risk_impact": 0,
+      "team_impact": 0,
+      "business_impact_score": 0,
+      "impact_classification": "geschaeftskritisch|sehr wichtig|sinnvoll|optional"
     }}
   ],
   "quick_wins": ["..."],
@@ -1708,15 +1936,22 @@ Antwort nur als JSON:
       "mid_term": ["1-2 mittelfristige Hebel"],
       "long_term": ["1-2 langfristige strategische Schritte"]
     }}
-  ]
+  ],
+  "primary_recommendation": "Die eine wichtigste Massnahme",
+  "primary_recommendation_reason": "Warum genau diese Massnahme die Nummer 1 ist",
+  "primary_recommendation_effect": "Welcher KPI- und Business-Effekt erwartet wird",
+  "next_step": "Was als Naechstes operativ passiert"
 }}
 
 Regeln:
 - 3-5 recommendations, sortiert nach ice_score absteigend.
 - ice_score = ice_impact × ice_confidence × ice_ease (jedes 1-10).
+- business_impact_score = (revenue_impact × 0.4) + (growth_impact × 0.3) + (risk_impact × 0.2) + (team_impact × 0.1).
 - Jedes rationale: mindestens eine Zahl (EUR, %, Trend).
 - Jede Empfehlung braucht KPI-Bezug, Priorisierungsgrund und strategischen Kontext.
 - Jede Empfehlung braucht eine klare owner_role fuer das Management.
+- Jede Empfehlung muss konkret beantworten: Was wird gemacht? Warum genau diese Massnahme? Welche KPI wird beeinflusst? Welche Wirkung wird erwartet? Wie schnell tritt die Wirkung ein?
+- Nur direkt aus den Daten ableiten. Keine generischen Marketing- oder Sales-Tipps.
 - priority = critical nur bei unmittelbarem Umsatz- oder Risikodruck.
 - Timeframe-Pflicht: mind. 1x 'immediate', mind. 1x 'this_week'.
 - Mindestens 1 Umsatzhebel, mindestens 1 Effizienz-/Funnel-Hebel.
@@ -1726,7 +1961,8 @@ Regeln:
 - opportunities: 3 priorisierte Chancen nach Potenzial, Risiko und Ressourcenbedarf.
 - risks: 3 priorisierte Risiken mit Management-Relevanz.
 - scenarios: genau 3 Szenarien: Basis, Offensiv, Defensiv.
-- role_priorities: genau 4 Eintraege fuer CEO, COO, CMO, CFO."""
+- role_priorities: genau 4 Eintraege fuer CEO, COO, CMO, CFO.
+- primary_recommendation muss exakt die hoechstpriorisierte Empfehlung benennen und begruenden."""
 
     if force_fallback:
         ms = _record_metric("recommendations", started, "fallback", True)
@@ -1758,6 +1994,10 @@ Regeln:
             risks=[str(x) for x in parsed.get("risks", [])][:3],
             scenarios=_safe_scenarios([item for item in parsed.get("scenarios", [])[:3] if isinstance(item, dict)]),
             role_priorities=_safe_role_priorities([item for item in parsed.get("role_priorities", [])[:4] if isinstance(item, dict)]),
+            primary_recommendation=str(parsed.get("primary_recommendation", recs[0].title if recs else "")) or None,
+            primary_recommendation_reason=str(parsed.get("primary_recommendation_reason", recs[0].priority_reason if recs else "")) or None,
+            primary_recommendation_effect=str(parsed.get("primary_recommendation_effect", recs[0].expected_result if recs else "")) or None,
+            next_step=str(parsed.get("next_step", recs[0].action_label if recs else "")) or None,
             source="claude",
             processing_ms=ms,
         )
@@ -1801,7 +2041,7 @@ GESCHAEFTSDATEN (7d / 30d / 90d):
             messages.append({"role": h.role, "content": h.content})
     messages.append({"role": "user", "content": body.message})
 
-    key = os.getenv("ANTHROPIC_API_KEY", "")
+    key, claude_model = get_claude_runtime_config()
     if not is_configured_secret(key, prefixes=("sk-ant-",), min_length=20):
         ms = _record_metric("chat", started, "fallback", False, "ANTHROPIC_API_KEY fehlt")
         return _local_chat_fallback(body.message, source_data, ms)
@@ -1809,18 +2049,15 @@ GESCHAEFTSDATEN (7d / 30d / 90d):
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             res = await client.post(
-                CLAUDE_URL,
-                headers={
-                    "x-api-key": key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": CLAUDE_MODEL,
-                    "max_tokens": 700,
-                    "system": system,
-                    "messages": messages,
-                },
+                CLAUDE_API_URL,
+                headers=build_claude_headers(key),
+                json=build_claude_payload(
+                    body.message,
+                    model=claude_model,
+                    max_tokens=700,
+                    system_prompt=system,
+                    messages=messages,
+                ),
             )
 
         if res.status_code != 200:
@@ -2142,9 +2379,10 @@ def get_ai_metrics(current_user: User = Depends(get_current_user)):
         2,
     ) if total_requests else 0.0
 
+    _, claude_model = get_claude_runtime_config()
     return AIMetricsResponse(
         generated_at=datetime.utcnow().isoformat(),
-        model=CLAUDE_MODEL,
+        model=claude_model,
         endpoints=endpoints,
         totals={
             "requests": float(total_requests),
@@ -2172,7 +2410,7 @@ def get_enterprise_ai(
         "industry": industry,
         "lookback_days": lookback_days,
     }
-    cache_key = _payload_fingerprint(payload)
+    cache_key = _workspace_cache_key(workspace_id, f"enterprise:{_payload_fingerprint(payload)}")
     cached = _cache_get(cache_key)
     if cached:
         _record_metric("enterprise", started, "cache", True)
@@ -2197,11 +2435,11 @@ def get_enterprise_ai(
 
 @router.get("/health-check")
 def check_api_status(current_user: User = Depends(get_current_user)):
-    key = os.getenv("ANTHROPIC_API_KEY", "")
+    key, claude_model = get_claude_runtime_config()
     configured = is_configured_secret(key, prefixes=("sk-ant-",), min_length=20)
     return {
         "configured": configured,
         "key_preview": f"{key[:12]}..." if len(key) > 12 else "nicht gesetzt",
-        "model": CLAUDE_MODEL,
+        "model": claude_model,
         "status": "ready" if configured else "missing_key",
     }

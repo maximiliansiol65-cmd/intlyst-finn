@@ -15,7 +15,9 @@ from sqlalchemy.orm import Session
 
 from database import get_db, get_current_workspace_id
 from api.auth_routes import get_current_user, User
+from api.role_guards import require_strategist_or_above, require_manager_or_above
 from models.scenario import Scenario
+from services.tenant_guard import require_workspace_context, assert_owns_resource
 
 router = APIRouter(prefix="/api/scenarios", tags=["scenarios"])
 
@@ -93,9 +95,9 @@ def list_scenarios(
     status: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_strategist_or_above),
 ):
-    workspace_id = get_current_workspace_id() or 1
+    workspace_id = require_workspace_context()
     q = db.query(Scenario).filter(Scenario.workspace_id == workspace_id)
     if forecast_id:
         q = q.filter(Scenario.forecast_id == forecast_id)
@@ -108,9 +110,9 @@ def list_scenarios(
 def create_scenario(
     body: ScenarioCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_manager_or_above),
 ):
-    workspace_id = get_current_workspace_id() or 1
+    workspace_id = require_workspace_context()
     scenario = Scenario(
         workspace_id=workspace_id,
         **body.model_dump(exclude_none=True),
@@ -125,12 +127,13 @@ def create_scenario(
 def get_scenario(
     scenario_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_strategist_or_above),
 ):
-    workspace_id = get_current_workspace_id() or 1
+    workspace_id = require_workspace_context()
     sc = db.query(Scenario).filter(Scenario.workspace_id == workspace_id, Scenario.id == scenario_id).first()
     if not sc:
         raise HTTPException(status_code=404, detail="Scenario not found")
+    assert_owns_resource(sc.workspace_id, workspace_id)
     return ScenarioOut.from_orm_clean(sc)
 
 
@@ -139,12 +142,13 @@ def update_scenario(
     scenario_id: int,
     body: ScenarioPatch,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_manager_or_above),
 ):
-    workspace_id = get_current_workspace_id() or 1
+    workspace_id = require_workspace_context()
     sc = db.query(Scenario).filter(Scenario.workspace_id == workspace_id, Scenario.id == scenario_id).first()
     if not sc:
         raise HTTPException(status_code=404, detail="Scenario not found")
+    assert_owns_resource(sc.workspace_id, workspace_id)
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(sc, field, value)
     from datetime import datetime
@@ -158,11 +162,12 @@ def update_scenario(
 def delete_scenario(
     scenario_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_manager_or_above),
 ):
-    workspace_id = get_current_workspace_id() or 1
+    workspace_id = require_workspace_context()
     sc = db.query(Scenario).filter(Scenario.workspace_id == workspace_id, Scenario.id == scenario_id).first()
     if not sc:
         raise HTTPException(status_code=404, detail="Scenario not found")
+    assert_owns_resource(sc.workspace_id, workspace_id)
     db.delete(sc)
     db.commit()

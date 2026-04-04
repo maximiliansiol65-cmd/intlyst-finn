@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, Index, Integer, String, Text
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Index, Integer, String, Text
 
 from models.base import Base
 
@@ -18,7 +18,7 @@ class Scenario(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     workspace_id = Column(Integer, nullable=False, default=1, index=True)
-    forecast_id = Column(Integer, nullable=True)         # FK to forecast_records
+    forecast_id = Column(Integer, ForeignKey("forecast_records.id"), nullable=True)
     name = Column(String(300), nullable=False)           # e.g. "More marketing budget"
     baseline_description = Column(Text, nullable=True)   # Current situation
     change_description = Column(Text, nullable=True)     # What changes in this scenario

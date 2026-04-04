@@ -3,9 +3,10 @@
 import httpx
 import json
 import os
-from dotenv import load_dotenv
 
-load_dotenv()
+from load_env import load_environment
+
+load_environment()
 
 BASE = "http://127.0.0.1:8000"
 key = os.getenv("ANTHROPIC_API_KEY", "").strip()

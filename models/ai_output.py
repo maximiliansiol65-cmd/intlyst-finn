@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, Index, Integer, String, Text
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Index, Integer, String, Text
 
 from models.base import Base
 
@@ -27,10 +27,10 @@ class AIOutput(Base):
     output_type = Column(String(50), nullable=False, default="analysis")
     content = Column(Text, nullable=False)               # Full text of the AI response
     structured_data = Column(Text, nullable=True)        # JSON for structured outputs
-    linked_kpi_id = Column(Integer, nullable=True)
-    linked_task_id = Column(Integer, nullable=True)
-    linked_goal_id = Column(Integer, nullable=True)
-    linked_insight_id = Column(Integer, nullable=True)
+    linked_kpi_id = Column(Integer, ForeignKey("custom_kpis.id"), nullable=True)
+    linked_task_id = Column(Integer, ForeignKey("tasks.id"), nullable=True)
+    linked_goal_id = Column(Integer, ForeignKey("goals.id"), nullable=True)
+    linked_insight_id = Column(Integer, ForeignKey("insights.id"), nullable=True)
     # priority: critical|high|medium|low
     priority = Column(String(20), nullable=False, default="medium")
     confidence_score = Column(Float, nullable=True, default=70.0)   # 0–100

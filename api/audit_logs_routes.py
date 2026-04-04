@@ -7,13 +7,11 @@ from sqlalchemy.orm import Session
 
 from api.auth_routes import User, get_current_user, get_current_workspace_id
 from api.role_guards import CEO_ROLES, MANAGER_ROLES, _get_workspace_role
-from database import engine, get_db
+from database import get_db
 from models.audit_log import AuditLog
-from models.base import Base
 
 router = APIRouter(prefix="/api/audit-logs", tags=["audit-logs"])
 
-Base.metadata.create_all(bind=engine)
 
 
 class AuditLogCreate(BaseModel):

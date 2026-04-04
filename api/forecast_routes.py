@@ -10,17 +10,17 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from api.auth_routes import User, get_current_user
+from api.auth_routes import User, get_current_user, get_current_workspace_id
+from api.role_guards import require_member_or_above
 from models.daily_metrics import DailyMetrics
 from security_config import is_configured_secret
-from database import get_current_workspace_id
 from services.forecast_service import persist_forecast_diagnosis
 
 router = APIRouter(prefix="/api/forecast", tags=["forecast"])
 
 
 @router.get("")
-def forecast_overview(current_user: User = Depends(get_current_user)):
+def forecast_overview(current_user: User = Depends(require_member_or_above)):
     """Health endpoint so unauthenticated calls fail with 401."""
     return {"metrics": ["revenue", "traffic", "conversion_rate", "new_customers"]}
 
@@ -52,6 +52,8 @@ class ForecastResponse(BaseModel):
     root_cause_insight_id: Optional[int] = None
     decision_problem_id: Optional[int] = None
     hidden_problems: list[dict] = []
+    opportunities: list[dict] = []
+    top_opportunity: Optional[dict] = None
     recommended_actions: list[str] = []
 
 
@@ -119,11 +121,15 @@ def _build_fallback_forecast(historical: list[dict], horizon_days: int) -> dict:
     }
 
 
-def get_historical(metric: str, db: Session, days: int = 30) -> list[dict]:
+def get_historical(metric: str, db: Session, workspace_id: int, days: int = 30) -> list[dict]:
     since = date.today() - timedelta(days=days)
     rows = (
         db.query(DailyMetrics)
-        .filter(DailyMetrics.period == "daily", DailyMetrics.date >= since)
+        .filter(
+            DailyMetrics.workspace_id == workspace_id,
+            DailyMetrics.period == "daily",
+            DailyMetrics.date >= since,
+        )
         .order_by(DailyMetrics.date)
         .all()
     )
@@ -215,7 +221,8 @@ async def get_forecast(
     metric: str,
     horizon: int = 30,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
+    workspace_id: int = Depends(get_current_workspace_id),
 ):
     if metric not in METRIC_LABELS:
         raise HTTPException(
@@ -227,7 +234,7 @@ async def get_forecast(
         raise HTTPException(status_code=400, detail="Horizon muss 30, 60 oder 90 sein.")
 
     label = METRIC_LABELS[metric]
-    historical_raw = get_historical(metric, db, days=30)
+    historical_raw = get_historical(metric, db, workspace_id, days=30)
 
     if not historical_raw:
         raise HTTPException(status_code=404, detail="Keine historischen Daten verfuegbar.")
@@ -270,7 +277,6 @@ async def get_forecast(
         generated_by=result.get("generated_by", "claude"),
     )
     try:
-        workspace_id = get_current_workspace_id() or 1
         diagnosis = persist_forecast_diagnosis(
             db=db,
             workspace_id=workspace_id,
@@ -289,6 +295,8 @@ async def get_forecast(
         response.root_cause_insight_id = diagnosis["root_cause_insight_id"]
         response.decision_problem_id = diagnosis["decision_problem_id"]
         response.hidden_problems = diagnosis["hidden_problems"]
+        response.opportunities = diagnosis.get("opportunities", [])
+        response.top_opportunity = diagnosis.get("top_opportunity")
         response.recommended_actions = diagnosis["actions"]
     except Exception:
         pass

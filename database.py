@@ -58,6 +58,12 @@ _WORKSPACE_SCOPED_TABLES = {
     "ai_outputs",
     "activity_logs",
     "custom_kpis",
+    # Junction tables
+    "goal_kpis",
+    "insight_tasks",
+    "insight_goals",
+    "forecast_scenarios",
+    "task_goals",
 }
 
 _current_workspace_id: ContextVar[int | None] = ContextVar("current_workspace_id", default=None)
@@ -256,6 +262,30 @@ def run_lightweight_migrations() -> None:
         for table, column, ddl in [
             ("mfa_secrets", "updated_at", "DATETIME"),
             ("user_sessions", "user_agent", "TEXT"),
+        ]:
+            try:
+                _ensure_column(conn, table, column, ddl)
+            except Exception:
+                continue
+        # Insight feedback fields
+        for table, column, ddl in [
+            ("insights", "feedback_rating", "INTEGER"),
+            ("insights", "feedback_comment", "TEXT"),
+            ("insights", "feedback_user_id", "INTEGER"),
+            ("insights", "feedback_at", "DATETIME"),
+        ]:
+            try:
+                _ensure_column(conn, table, column, ddl)
+            except Exception:
+                continue
+        # Phase 2: Junction tables — created by SQLAlchemy metadata (Base.metadata.create_all),
+        # but ensure workspace_id column exists for older DBs.
+        for table, column, ddl in [
+            ("goal_kpis", "workspace_id", "INTEGER NOT NULL DEFAULT 1"),
+            ("insight_tasks", "workspace_id", "INTEGER NOT NULL DEFAULT 1"),
+            ("insight_goals", "workspace_id", "INTEGER NOT NULL DEFAULT 1"),
+            ("forecast_scenarios", "workspace_id", "INTEGER NOT NULL DEFAULT 1"),
+            ("task_goals", "workspace_id", "INTEGER NOT NULL DEFAULT 1"),
         ]:
             try:
                 _ensure_column(conn, table, column, ddl)

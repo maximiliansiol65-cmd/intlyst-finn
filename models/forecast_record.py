@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, Index, Integer, String, Text
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Index, Integer, String, Text
 
 from models.base import Base
 
@@ -15,7 +15,7 @@ class ForecastRecord(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     workspace_id = Column(Integer, nullable=False, default=1, index=True)
-    kpi_id = Column(Integer, nullable=True)              # FK to custom_kpis (nullable for built-in KPIs)
+    kpi_id = Column(Integer, ForeignKey("custom_kpis.id"), nullable=True)
     kpi_name = Column(String(200), nullable=False)       # e.g. "revenue", "traffic", custom KPI name
     period_start = Column(DateTime, nullable=False)
     period_end = Column(DateTime, nullable=False)
@@ -29,7 +29,7 @@ class ForecastRecord(Base):
     trend = Column(String(20), nullable=True)            # up|down|stable
     growth_pct = Column(Float, nullable=True)
     confidence = Column(Float, nullable=True, default=70.0)  # 0–100
-    linked_insight_id = Column(Integer, nullable=True)   # FK to insights
+    linked_insight_id = Column(Integer, ForeignKey("insights.id"), nullable=True)
     linked_scenario_ids = Column(Text, nullable=True)    # JSON array of scenario IDs
     # actual_value filled in later when real data arrives
     actual_value = Column(Float, nullable=True)

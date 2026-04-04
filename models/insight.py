@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, Index, Integer, String, Text
+from sqlalchemy import Column, DateTime, Float, Index, Integer, String, Text, Boolean
 
 from models.base import Base
 
@@ -51,6 +51,11 @@ class Insight(Base):
     status = Column(String(30), nullable=False, default="new")
     linked_task_ids = Column(Text, nullable=True)   # JSON array
     linked_goal_ids = Column(Text, nullable=True)   # JSON array
+    # Feedback from users (replaces activity-log-only storage)
+    feedback_rating = Column(Integer, nullable=True)     # 1–5
+    feedback_comment = Column(Text, nullable=True)
+    feedback_user_id = Column(Integer, nullable=True)
+    feedback_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

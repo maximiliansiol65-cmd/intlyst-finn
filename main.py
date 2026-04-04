@@ -8,16 +8,19 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
+
+from load_env import load_environment
 
 from database import SessionLocal, init_db, reset_current_workspace_id, set_current_workspace_id
 from models import Base
 from models.error_trace import ErrorTrace
 from security_config import get_runtime_secret_issues, is_configured_secret, is_production_environment
+from services.claude_runtime import get_claude_runtime_config
 from services.error_trace_service import record_error_trace
 
 RequestSizeMiddleware = None
@@ -60,7 +63,7 @@ logging.basicConfig(
 logger = logging.getLogger("main")
 audit_logger = logging.getLogger("audit")
 
-load_dotenv()
+load_environment()
 
 from routers import (
     timeseries, trends, actions, goals, anomalies,
@@ -91,6 +94,10 @@ from api.forecast_records_routes import router as forecast_records_router
 from api.scenarios_routes import router as scenarios_router
 from api.ai_team_routes import router as ai_team_router
 from api.activity_logs_di_routes import router as activity_logs_di_router
+from api.ai_outputs_routes import router as ai_outputs_router
+from api.kpi_data_points_routes import router as kpi_data_points_router
+from api.ai_agents_routes import router as ai_agents_router
+from api.di_dashboard_routes import router as di_dashboard_router
 from api.mfa_routes import router as mfa_router
 from api.metrics_routes import router as metrics_router
 from api.drilldown_routes import router as drilldown_router
@@ -107,6 +114,7 @@ from services.external_data_provider import ExternalDataProvider
 from database import SessionLocal
 
 # ── APScheduler ───────────────────────────────────────────────────────────────
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.schedulers.base import STATE_RUNNING
 from services.report_service import scheduled_daily_report, scheduled_weekly_report
@@ -121,7 +129,33 @@ from services.strategy_cycle_service import run_background_strategy_cycle_job
 from services.self_learning_service import run_learning_cycle
 from services.kpi_monitor_service import run_kpi_monitor_all_workspaces
 
-_scheduler = AsyncIOScheduler(timezone="Europe/Berlin")
+_scheduler: Optional[AsyncIOScheduler] = None
+
+
+def _log_scheduler_event(event) -> None:
+    job_id = getattr(event, "job_id", "unknown")
+    if event.code == EVENT_JOB_MISSED:
+        logger.warning("Scheduler-Job verpasst: %s", job_id)
+        return
+    if getattr(event, "exception", None):
+        logger.error(
+            "Scheduler-Job fehlgeschlagen: %s\n%s",
+            job_id,
+            getattr(event, "traceback", ""),
+        )
+
+
+def _build_scheduler() -> AsyncIOScheduler:
+    scheduler = AsyncIOScheduler(
+        timezone="Europe/Berlin",
+        job_defaults={
+            "coalesce": True,
+            "max_instances": 1,
+            "misfire_grace_time": 900,
+        },
+    )
+    scheduler.add_listener(_log_scheduler_event, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
+    return scheduler
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 _allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "")
@@ -373,12 +407,16 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # ── Startup ───────────────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup():
+    global _scheduler
     issues = get_runtime_secret_issues()
     if issues and is_production_environment():
         raise RuntimeError("Unsichere Produktionskonfiguration: " + " | ".join(issues))
     for issue in issues:
         logger.warning("Sicherheitswarnung: %s", issue)
     init_db()
+
+    if _scheduler is None:
+        _scheduler = _build_scheduler()
 
     # Automatische Berichte planen: täglich 07:00, wöchentlich Mo 07:05
     _scheduler.add_job(
@@ -461,8 +499,10 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
-    if _scheduler.state == STATE_RUNNING:
+    global _scheduler
+    if _scheduler and _scheduler.state == STATE_RUNNING:
         _scheduler.shutdown(wait=False)
+    _scheduler = None
     logger.info("Scheduler gestoppt.")
     if backup_system:
         backup_system.create("manual", "shutdown", "Shutdown-Backup")
@@ -538,6 +578,10 @@ app.include_router(forecast_records_router)
 app.include_router(scenarios_router)
 app.include_router(ai_team_router)
 app.include_router(activity_logs_di_router)
+app.include_router(ai_outputs_router)
+app.include_router(kpi_data_points_router)
+app.include_router(ai_agents_router)
+app.include_router(di_dashboard_router)
 app.include_router(mfa_router)
 app.include_router(metrics_router)
 app.include_router(drilldown_router)
@@ -588,10 +632,26 @@ def root():
 
 @app.get("/health", tags=["meta"])
 def health():
-    """Healthcheck – gibt nur Status zurueck, keine Service-Details in Produktion."""
+    """Live healthcheck with DB and scheduler visibility for production-safe monitoring."""
+    db_status = "connected"
+    try:
+        db = SessionLocal()
+        try:
+            db.execute(text("SELECT 1"))
+        finally:
+            db.close()
+    except Exception as exc:
+        db_status = "disconnected"
+        logger.error("Healthcheck DB probe failed: %s", exc)
+
+    scheduler_running = bool(_scheduler and _scheduler.state == STATE_RUNNING)
+    scheduler_jobs = len(_scheduler.get_jobs()) if _scheduler else 0
+
     result: dict = {
-        "status": "healthy",
-        "database": "connected",
+        "status": "healthy" if db_status == "connected" else "degraded",
+        "database": db_status,
+        "scheduler": "running" if scheduler_running else "stopped",
+        "scheduler_jobs": scheduler_jobs,
         "ga4": bool(os.getenv("GA4_SERVICE_ACCOUNT_JSON") or os.getenv("GA4_ACCESS_TOKEN")),
     }
 
@@ -600,8 +660,10 @@ def health():
         result["backup_ok"] = not stats.get("backup_overdue")
 
     if not is_production_environment():
+        _, claude_model = get_claude_runtime_config()
         result["services"] = {
-            "database": "ok",
+            "database": "ok" if db_status == "connected" else "down",
+            "scheduler": result["scheduler"],
             "google_maps": "configured" if is_configured_secret(
                 os.getenv("GOOGLE_MAPS_API_KEY", ""), prefixes=("AIza",), min_length=20
             ) else "not_configured",
@@ -611,6 +673,10 @@ def health():
             "stripe": "configured" if is_configured_secret(
                 os.getenv("STRIPE_SECRET_KEY", ""), prefixes=("sk_",), min_length=12
             ) else "not_configured",
+        }
+        result["runtime"] = {
+            "claude_model": claude_model,
+            "environment": os.getenv("ENVIRONMENT") or os.getenv("APP_ENV") or "development",
         }
     return result
 

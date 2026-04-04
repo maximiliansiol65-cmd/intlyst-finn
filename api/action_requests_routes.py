@@ -9,11 +9,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api.auth_routes import User, get_current_user, get_current_workspace_id
-from database import engine, get_db
+from database import get_db
 from models.action_logs import ActionLog
 from models.action_request import ActionRequest
 from models.action_request_review import ActionRequestReview
-from models.base import Base
 from models.task import Task, TaskHistory
 from api.audit_logs_routes import record_audit_event
 from api.role_guards import _get_workspace_role, MANAGER_ROLES, CEO_ROLES
@@ -31,8 +30,6 @@ from services.live_feedback_service import (
 from services.report_service import create_report
 
 router = APIRouter(prefix="/api/action-requests", tags=["action-requests"])
-
-Base.metadata.create_all(bind=engine)
 
 VALID_STATUSES = {"pending_approval", "approved", "rejected", "executed"}
 VALID_EXECUTION_TYPES = {"task", "report", "email_draft", "strategy_bundle"}

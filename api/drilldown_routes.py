@@ -18,7 +18,9 @@ from api.role_guards import (
 from database import get_db
 from models.daily_metrics import DailyMetrics
 from models.goals import Goal
+from models.custom_kpi import CustomKPI
 from models.user import User
+from services.relationship_service import get_goal_kpi_ids
 
 router = APIRouter(prefix="/api/drilldown", tags=["drilldown"])
 
@@ -84,22 +86,53 @@ def _compute_trend(values: list[float]) -> TrendSummary:
 
 
 def _get_goal_for_kpi(db: Session, workspace_id: int, kpi_key: str):
-    """Returns most recent active goal matching the KPI key (case-insensitive title check)."""
+    """Returns the most relevant active goal for a KPI using metric/link matching first."""
+    normalized_key = str(kpi_key or "").strip().lower().replace("-", "_").replace(" ", "_")
+
     try:
+        exact = (
+            db.query(Goal)
+            .filter(
+                Goal.workspace_id == workspace_id,
+                Goal.status != "archived",
+                func.lower(Goal.metric) == normalized_key,
+            )
+            .order_by(Goal.created_at.desc())
+            .first()
+        )
+        if exact:
+            return exact
+
+        candidate_kpi_ids = {
+            row[0]
+            for row in (
+                db.query(CustomKPI.id)
+                .filter(
+                    CustomKPI.workspace_id == workspace_id,
+                    func.lower(CustomKPI.name).in_({normalized_key, normalized_key.replace("_", " ")}),
+                )
+                .all()
+            )
+        }
+
         goals = (
             db.query(Goal)
             .filter(Goal.workspace_id == workspace_id, Goal.status != "archived")
             .order_by(Goal.created_at.desc())
-            .limit(50)
+            .limit(100)
             .all()
         )
-        for g in goals:
-            title = str(getattr(g, "title", "") or "").lower()
-            kpi_lower = kpi_key.lower().replace("_", " ")
-            if kpi_lower in title or kpi_key.lower() in title:
-                return g
+        for goal in goals:
+            if candidate_kpi_ids:
+                linked_ids = set(get_goal_kpi_ids(db, workspace_id, goal.id))
+                if linked_ids.intersection(candidate_kpi_ids):
+                    return goal
+
+            title = str(getattr(goal, "title", "") or "").lower().replace("-", "_").replace(" ", "_")
+            if normalized_key in title:
+                return goal
     except Exception:
-        pass
+        return None
     return None
 
 
@@ -168,12 +201,12 @@ def drilldown_kpi(
             causality_note = (
                 f"Rückgang von {abs(trend.change_pct):.1f}% erkannt. "
                 "Mögliche Ursachen: saisonale Effekte, Kampagnenende oder Kostenerhöhung. "
-                "Kausalitätsanalyse über /api/ai/analyze verfügbar."
+                "Kausalitätsanalyse über /api/ai/analysis verfügbar."
             )
         elif trend.change_pct >= 10:
             causality_note = (
                 f"Wachstum von {trend.change_pct:.1f}% erkannt. "
-                "Treiber können über /api/ai/analyze genauer untersucht werden."
+                "Treiber können über /api/ai/analysis genauer untersucht werden."
             )
 
     return DrilldownResponse(

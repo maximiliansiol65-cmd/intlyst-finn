@@ -21,13 +21,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
-from database import engine, get_db
+from database import get_db
 from models.custom_kpi import CustomKPI
-from models.base import Base
 from models.daily_metrics import DailyMetrics
-from api.auth_routes import User, get_current_user
-
-Base.metadata.create_all(bind=engine)
+from api.auth_routes import User, get_current_user, get_current_workspace_id
+from api.role_guards import require_manager_or_above, require_member_or_above
 
 router = APIRouter(prefix="/api/kpis/custom", tags=["custom_kpis"])
 logger = logging.getLogger(__name__)
@@ -140,24 +138,27 @@ def _avg(vals: list[float]) -> float:
 def _sum(vals: list[float]) -> float:
     return sum(vals)
 
-def _fetch_rows(db: Session, start: date, end: date) -> list:
+def _fetch_rows(db: Session, workspace_id: int, start: date, end: date) -> list:
     return (
         db.query(DailyMetrics)
-        .filter(DailyMetrics.period == "daily",
-                DailyMetrics.date >= start,
-                DailyMetrics.date <= end)
+        .filter(
+            DailyMetrics.workspace_id == workspace_id,
+            DailyMetrics.period == "daily",
+            DailyMetrics.date >= start,
+            DailyMetrics.date <= end,
+        )
         .order_by(DailyMetrics.date)
         .all()
     )
 
-def _compute(kpi: CustomKPI, db: Session) -> Optional[float]:
+def _compute(kpi: CustomKPI, db: Session, workspace_id: int) -> Optional[float]:
     window  = int(getattr(kpi, "window_days") or 30)
     cfg     = json.loads(str(getattr(kpi, "formula_config")))
     ftype   = str(getattr(kpi, "formula_type"))
     today   = date.today()
     end     = today
     start   = today - timedelta(days=window - 1)
-    rows    = _fetch_rows(db, start, end)
+    rows    = _fetch_rows(db, workspace_id, start, end)
 
     if not rows and ftype != "growth":
         return None
@@ -186,7 +187,7 @@ def _compute(kpi: CustomKPI, db: Session) -> Optional[float]:
         prev_s  = start - timedelta(days=window)
         prev_e  = start - timedelta(days=1)
         cur_rows  = rows
-        prev_rows = _fetch_rows(db, prev_s, prev_e)
+        prev_rows = _fetch_rows(db, workspace_id, prev_s, prev_e)
         cur_avg   = _avg(_metric_vals(cur_rows,  metric))
         prev_avg  = _avg(_metric_vals(prev_rows, metric))
         if prev_avg == 0:
@@ -234,10 +235,10 @@ def _status(value: Optional[float], kpi: CustomKPI) -> str:
     return "ok"
 
 
-def _to_result(kpi: CustomKPI, db: Session) -> KPIValueResult:
+def _to_result(kpi: CustomKPI, db: Session, workspace_id: int) -> KPIValueResult:
     window  = int(getattr(kpi, "window_days") or 30)
     today   = date.today()
-    value   = _compute(kpi, db)
+    value   = _compute(kpi, db, workspace_id)
     unit    = str(getattr(kpi, "unit") or "")
     t       = getattr(kpi, "target", None)
     t_pct   = None
@@ -269,7 +270,8 @@ def _to_result(kpi: CustomKPI, db: Session) -> KPIValueResult:
 def create_kpi(
     body: KPICreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_manager_or_above),
+    workspace_id: int = Depends(get_current_workspace_id),
 ):
     """Neuen Custom KPI definieren und sofort berechnen."""
     kpi = CustomKPI(
@@ -283,29 +285,31 @@ def create_kpi(
         alert_above=body.alert_above,
         window_days=body.window_days,
         sort_order=body.sort_order,
+        workspace_id=workspace_id,
     )
     db.add(kpi)
     db.commit()
     db.refresh(kpi)
-    return _to_result(kpi, db)
+    return _to_result(kpi, db, workspace_id)
 
 
 @router.get("", response_model=list[KPIValueResult])
 def list_kpis(
     active_only: bool = True,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
+    workspace_id: int = Depends(get_current_workspace_id),
 ):
     """Alle Custom KPIs auflisten, live berechnet."""
-    q = db.query(CustomKPI)
+    q = db.query(CustomKPI).filter(CustomKPI.workspace_id == workspace_id)
     if active_only:
         q = q.filter(CustomKPI.is_active == True)   # noqa: E712
     kpis = q.order_by(CustomKPI.sort_order, CustomKPI.created_at).all()
-    return [_to_result(k, db) for k in kpis]
+    return [_to_result(k, db, workspace_id) for k in kpis]
 
 
 @router.get("/templates")
-def get_templates(current_user: User = Depends(get_current_user)):
+def get_templates(current_user: User = Depends(require_member_or_above)):
     """Vordefinierte Formel-Vorlagen für gängige KPIs."""
     return [
         {
@@ -371,12 +375,13 @@ def get_templates(current_user: User = Depends(get_current_user)):
 def get_kpi(
     kpi_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
+    workspace_id: int = Depends(get_current_workspace_id),
 ):
-    kpi = db.query(CustomKPI).filter(CustomKPI.id == kpi_id).first()
+    kpi = db.query(CustomKPI).filter(CustomKPI.workspace_id == workspace_id, CustomKPI.id == kpi_id).first()
     if not kpi:
         raise HTTPException(status_code=404, detail="KPI nicht gefunden.")
-    return _to_result(kpi, db)
+    return _to_result(kpi, db, workspace_id)
 
 
 @router.get("/{kpi_id}/history")
@@ -384,13 +389,14 @@ def get_kpi_history(
     kpi_id: int,
     points: int = 30,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_member_or_above),
+    workspace_id: int = Depends(get_current_workspace_id),
 ):
     """
     Historische KPI-Werte: rollierende Berechnung für die letzten `points` Tage.
     Jeder Punkt = KPI-Wert wenn das Fenster an diesem Tag endet.
     """
-    kpi = db.query(CustomKPI).filter(CustomKPI.id == kpi_id).first()
+    kpi = db.query(CustomKPI).filter(CustomKPI.workspace_id == workspace_id, CustomKPI.id == kpi_id).first()
     if not kpi:
         raise HTTPException(status_code=404, detail="KPI nicht gefunden.")
 
@@ -401,7 +407,7 @@ def get_kpi_history(
     for i in range(points - 1, -1, -1):
         end_date   = today - timedelta(days=i)
         start_date = end_date - timedelta(days=window - 1)
-        rows       = _fetch_rows(db, start_date, end_date)
+        rows       = _fetch_rows(db, workspace_id, start_date, end_date)
 
         # Temporäre KPI-Kopie mit verschobenem Fenster
         class _TmpKPI:
@@ -431,7 +437,7 @@ def get_kpi_history(
                 value = round((_avg(_metric_vals(rows, cfg["metric_a"])) -
                                _avg(_metric_vals(rows, cfg["metric_b"]))) * mult, 4)
             elif ftype == "growth":
-                prev_rows = _fetch_rows(db,
+                prev_rows = _fetch_rows(db, workspace_id,
                     start_date - timedelta(days=window),
                     start_date - timedelta(days=1))
                 ca = _avg(_metric_vals(rows,      cfg["metric"]))
@@ -456,9 +462,10 @@ def update_kpi(
     kpi_id: int,
     body: KPIUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_manager_or_above),
+    workspace_id: int = Depends(get_current_workspace_id),
 ):
-    kpi = db.query(CustomKPI).filter(CustomKPI.id == kpi_id).first()
+    kpi = db.query(CustomKPI).filter(CustomKPI.workspace_id == workspace_id, CustomKPI.id == kpi_id).first()
     if not kpi:
         raise HTTPException(status_code=404, detail="KPI nicht gefunden.")
 
@@ -476,16 +483,17 @@ def update_kpi(
     setattr(kpi, "updated_at", datetime.utcnow())
     db.commit()
     db.refresh(kpi)
-    return _to_result(kpi, db)
+    return _to_result(kpi, db, workspace_id)
 
 
 @router.delete("/{kpi_id}")
 def delete_kpi(
     kpi_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_manager_or_above),
+    workspace_id: int = Depends(get_current_workspace_id),
 ):
-    kpi = db.query(CustomKPI).filter(CustomKPI.id == kpi_id).first()
+    kpi = db.query(CustomKPI).filter(CustomKPI.workspace_id == workspace_id, CustomKPI.id == kpi_id).first()
     if not kpi:
         raise HTTPException(status_code=404, detail="KPI nicht gefunden.")
     db.delete(kpi)
